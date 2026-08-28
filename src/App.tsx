@@ -9,7 +9,8 @@ import { AndroidInstallModal } from './components/AndroidInstallModal';
 import { INITIAL_TE4_CATEGORIES } from './data/te4NormativeCategories';
 import { Inspection, InstallerInfo, ClientInfo, TechnicalInfo, ItemStatus, PhotoItem, ChecklistCategory } from './types';
 import { TARGET_DRIVE_ACCOUNT } from './utils/googleDrive';
-import { Save, CheckCircle, FileText, HardDrive, Shield, AlertTriangle, Smartphone, RotateCcw, PlusCircle } from 'lucide-react';
+import { getApplicableCategories, extractNumericPowerKw } from './utils/powerHelper';
+import { Save, CheckCircle, FileText, HardDrive, Shield, AlertTriangle, Smartphone, RotateCcw, PlusCircle, Zap } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY = 'te4_inspection_active_v1';
 const LOCAL_STORAGE_LIST_KEY = 'te4_inspections_history_v1';
@@ -214,13 +215,17 @@ export default function App() {
     };
   }
 
-  // Count metrics
+  // Filter visible categories according to inverter / project power
+  const visibleCategories = getApplicableCategories(inspection.categories, inspection.technical);
+  const currentProjectPowerKw = extractNumericPowerKw(inspection.technical);
+
+  // Count metrics based on visible categories
   let totalItemsCount = 0;
   let completedItemsCount = 0;
   let totalPhotosCount = 0;
   let nonCompliantCount = 0;
 
-  inspection.categories.forEach((cat) => {
+  visibleCategories.forEach((cat) => {
     cat.items.forEach((item) => {
       totalItemsCount++;
       if (item.status !== 'PENDIENTE') completedItemsCount++;
@@ -458,18 +463,35 @@ export default function App() {
 
         {/* Checklist Categories & Photo Upload Cards */}
         <div className="space-y-3">
-          <div className="flex items-center justify-between border-b-2 border-[#15803D] pb-2">
-            <h2 className="text-lg sm:text-xl font-serif italic text-[#14532D] font-bold flex items-center gap-2">
-              <Shield className="w-5 h-5 text-[#25A238]" />
-              Checklist de Inspección TE4 SEC (RIC N°01 a N°19)
-            </h2>
-            <span className="text-[10px] uppercase font-mono tracking-widest text-[#15803D] font-bold hidden sm:inline">
-              SERVILEC ENERGÍA • Inspección Fotográfica
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-[#15803D] pb-2 gap-2">
+            <div>
+              <h2 className="text-lg sm:text-xl font-serif italic text-[#14532D] font-bold flex items-center gap-2">
+                <Shield className="w-5 h-5 text-[#25A238]" />
+                Checklist de Inspección TE4 SEC
+              </h2>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold bg-[#DCFCE7] text-[#14532D] px-2 py-0.5 border border-[#15803D]/30 rounded-2xs">
+                  <Zap className="w-3 h-3 text-[#15803D]" />
+                  {currentProjectPowerKw < 10
+                    ? `Proyecto Residencial (${currentProjectPowerKw} kW < 10 kW): Ítems 1 al 12 aplicables`
+                    : currentProjectPowerKw <= 30
+                    ? `Proyecto Comercial (${currentProjectPowerKw} kW / 10 a 30 kW): Ítems 1 al 15 aplicables`
+                    : `Proyecto Gran Escala (${currentProjectPowerKw} kW > 30 kW): Ítems 1 al 19 aplicables`}
+                </span>
+                {currentProjectPowerKw < 10 && (
+                  <span className="text-[10px] text-slate-500 hidden md:inline">
+                    (Ítems de 10kW y 30kW ocultos automáticamente para agilizar la labor en terreno)
+                  </span>
+                )}
+              </div>
+            </div>
+            <span className="text-[10px] uppercase font-mono tracking-widest text-[#15803D] font-bold self-start sm:self-center">
+              SERVILEC ENERGÍA • RIC SEC
             </span>
           </div>
 
           <ChecklistCategoryView
-            categories={inspection.categories}
+            categories={visibleCategories}
             onUpdateStatus={handleUpdateItemStatus}
             onUpdateObservation={handleUpdateItemObservation}
             onAddPhotos={handleAddPhotosToItem}

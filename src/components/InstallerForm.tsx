@@ -1284,6 +1284,79 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                   </select>
                 </div>
               </div>
+
+              <div>
+                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                  RUT del Instalador
+                </label>
+                <input
+                  id="input-installer-rut"
+                  type="text"
+                  value={installer.rut}
+                  onChange={(e) => onChangeInstaller({ ...installer, rut: e.target.value })}
+                  placeholder="Ej. 12.345.678-9"
+                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                  Número de Licencia SEC *
+                </label>
+                <input
+                  id="input-installer-sec-licence"
+                  type="text"
+                  value={installer.secLicenceNumber}
+                  onChange={(e) => onChangeInstaller({ ...installer, secLicenceNumber: e.target.value })}
+                  placeholder="Ej. SEC-84729"
+                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none font-mono font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                  Clase de Licencia SEC *
+                </label>
+                <select
+                  id="select-installer-sec-class"
+                  value={installer.secClass}
+                  onChange={(e) => onChangeInstaller({ ...installer, secClass: e.target.value as any })}
+                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer font-bold"
+                >
+                  <option value="Clase A">Clase A (Sin límite de potencia)</option>
+                  <option value="Clase B">Clase B (Hasta 500 kW)</option>
+                  <option value="Clase C">Clase C (Hasta 100 kW)</option>
+                  <option value="Clase D">Clase D (Hasta 10 kW)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                  Teléfono Contacto Instalador
+                </label>
+                <input
+                  id="input-installer-phone"
+                  type="text"
+                  value={installer.phone}
+                  onChange={(e) => onChangeInstaller({ ...installer, phone: e.target.value })}
+                  placeholder="Ej. +56 9 1234 5678"
+                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                  Email / Correo Electrónico
+                </label>
+                <input
+                  id="input-installer-email"
+                  type="email"
+                  value={installer.email}
+                  onChange={(e) => onChangeInstaller({ ...installer, email: e.target.value })}
+                  placeholder="Ej. contacto@servilec.cl"
+                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none"
+                />
+              </div>
             </div>
           </div>
 
@@ -1587,163 +1660,168 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                 </select>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-0.5">
-                  <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70">
-                    Marca Baterías Litio
-                  </label>
-                  <button
-                    id="btn-add-custom-battery-brand"
-                    type="button"
-                    onClick={() => setIsAddingCustomBatteryBrand(true)}
-                    className="text-[9px] font-bold text-[#15803D] hover:text-[#14532D] flex items-center gap-0.5 cursor-pointer bg-[#DCFCE7] hover:bg-[#bbf7d0] px-1.5 py-0.5 border border-[#15803D]/40 rounded-2xs transition-colors"
-                    title="Agregar una nueva marca de batería de litio"
-                  >
-                    <Plus className="w-3 h-3 text-[#15803D]" />
-                    <span>+ Marca Nueva</span>
-                  </button>
-                </div>
-                <select
-                  id="select-battery-brand"
-                  value={currentBatteryBrand}
-                  onChange={(e) => {
-                    const newBrand = e.target.value;
-                    if (!newBrand || newBrand.startsWith('Sin Baterías')) {
-                      onChangeTechnical({
-                        ...technical,
-                        batteryBrand: newBrand,
-                        batteryModel: '',
-                        batteryCount: 0,
-                        batteryTotalKwh: '0.00 kWh',
-                        batteryInfo: newBrand || 'Sin Baterías'
-                      });
-                    } else {
-                      const firstModel = lithiumBatteryModelsMap[newBrand]?.[0] || '';
-                      const count = technical.batteryCount || 1;
-                      const { info, totalKwhStr } = formatBatteryInfo(newBrand, firstModel, count);
-                      onChangeTechnical({
-                        ...technical,
-                        batteryBrand: newBrand,
-                        batteryModel: firstModel,
-                        batteryCount: count,
-                        batteryTotalKwh: totalKwhStr,
-                        batteryInfo: info
-                      });
-                    }
-                  }}
-                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer"
-                >
-                  <option value="">Seleccione Marca de Batería de Litio...</option>
-                  {lithiumBatteryBrandsList.map((brand) => (
-                    <option key={brand} value={brand}>{brand}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-0.5">
-                  <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70">
-                    Modelo Batería de Litio
-                  </label>
-                  <button
-                    id="btn-add-custom-battery-model"
-                    type="button"
-                    onClick={() => {
-                      setCustomBatteryBrandForModel(currentBatteryBrand || lithiumBatteryBrandsList[1] || 'Dyness');
-                      setIsAddingCustomBatteryModel(true);
-                    }}
-                    className="text-[9px] font-bold text-[#15803D] hover:text-[#14532D] flex items-center gap-0.5 cursor-pointer bg-[#DCFCE7] hover:bg-[#bbf7d0] px-1.5 py-0.5 border border-[#15803D]/40 rounded-2xs transition-colors"
-                    title="Agregar un nuevo modelo de batería de litio"
-                  >
-                    <Plus className="w-3 h-3 text-[#15803D]" />
-                    <span>+ Modelo Nuevo</span>
-                  </button>
-                </div>
-                <select
-                  id="select-battery-model"
-                  value={currentBatteryModel}
-                  disabled={!currentBatteryBrand || currentBatteryBrand.startsWith('Sin Baterías')}
-                  onChange={(e) => {
-                    const newModel = e.target.value;
-                    const count = technical.batteryCount || 1;
-                    const { info, totalKwhStr } = formatBatteryInfo(currentBatteryBrand, newModel, count);
-                    onChangeTechnical({
-                      ...technical,
-                      batteryModel: newModel,
-                      batteryCount: count,
-                      batteryTotalKwh: totalKwhStr,
-                      batteryInfo: info
-                    });
-                  }}
-                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <option value="">
-                    {!currentBatteryBrand
-                      ? 'Primero seleccione marca de batería...'
-                      : currentBatteryBrand.startsWith('Sin Baterías')
-                      ? 'No aplica'
-                      : 'Seleccione Modelo / Capacidad...'}
-                  </option>
-                  {availableBatteryModels.map((model) => (
-                    <option key={model} value={model}>{model}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
-                  Cantidad de Baterías
-                </label>
-                <select
-                  id="select-battery-count"
-                  value={technical.batteryCount || 1}
-                  disabled={!currentBatteryBrand || currentBatteryBrand.startsWith('Sin Baterías')}
-                  onChange={(e) => {
-                    const newCount = parseInt(e.target.value, 10) || 1;
-                    const { info, totalKwhStr } = formatBatteryInfo(currentBatteryBrand, currentBatteryModel, newCount);
-                    onChangeTechnical({
-                      ...technical,
-                      batteryCount: newCount,
-                      batteryTotalKwh: totalKwhStr,
-                      batteryInfo: info
-                    });
-                  }}
-                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {!currentBatteryBrand || currentBatteryBrand.startsWith('Sin Baterías') ? (
-                    <option value={0}>0 (No aplica)</option>
-                  ) : (
-                    Array.from({ length: 32 }, (_, i) => i + 1).map((num) => (
-                      <option key={num} value={num}>
-                        {num} {num === 1 ? 'Batería' : 'Baterías'}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5 text-[#15803D]">
-                  Suma Total Capacidad Baterías (kWh)
-                </label>
-                <input
-                  id="input-battery-total-kwh"
-                  type="text"
-                  readOnly
-                  value={
-                    !currentBatteryBrand || currentBatteryBrand.startsWith('Sin Baterías')
-                      ? 'Sin Baterías (0 kWh)'
-                      : (() => {
+              {/* Battery selection fields - Hidden when system is On-Grid (Netbilling) */}
+              {technical.systemType !== 'On-Grid (Netbilling)' && (
+                <>
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70">
+                        Marca Baterías Litio
+                      </label>
+                      <button
+                        id="btn-add-custom-battery-brand"
+                        type="button"
+                        onClick={() => setIsAddingCustomBatteryBrand(true)}
+                        className="text-[9px] font-bold text-[#15803D] hover:text-[#14532D] flex items-center gap-0.5 cursor-pointer bg-[#DCFCE7] hover:bg-[#bbf7d0] px-1.5 py-0.5 border border-[#15803D]/40 rounded-2xs transition-colors"
+                        title="Agregar una nueva marca de batería de litio"
+                      >
+                        <Plus className="w-3 h-3 text-[#15803D]" />
+                        <span>+ Marca Nueva</span>
+                      </button>
+                    </div>
+                    <select
+                      id="select-battery-brand"
+                      value={currentBatteryBrand}
+                      onChange={(e) => {
+                        const newBrand = e.target.value;
+                        if (!newBrand || newBrand.startsWith('Sin Baterías')) {
+                          onChangeTechnical({
+                            ...technical,
+                            batteryBrand: newBrand,
+                            batteryModel: '',
+                            batteryCount: 0,
+                            batteryTotalKwh: '0.00 kWh',
+                            batteryInfo: newBrand || 'Sin Baterías'
+                          });
+                        } else {
+                          const firstModel = lithiumBatteryModelsMap[newBrand]?.[0] || '';
                           const count = technical.batteryCount || 1;
-                          const unitKwh = extractBatteryKwh(currentBatteryModel);
-                          const total = (unitKwh * count).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                          return `${total} kWh (${count} x ${unitKwh} kWh)`;
-                        })()
-                  }
-                  placeholder="Total capacidad acumulada"
-                  className="w-full px-2.5 py-1.5 bg-[#ECFDF5] border border-[#15803D]/40 text-xs font-bold text-[#14532D] focus:outline-none cursor-default"
-                />
-              </div>
+                          const { info, totalKwhStr } = formatBatteryInfo(newBrand, firstModel, count);
+                          onChangeTechnical({
+                            ...technical,
+                            batteryBrand: newBrand,
+                            batteryModel: firstModel,
+                            batteryCount: count,
+                            batteryTotalKwh: totalKwhStr,
+                            batteryInfo: info
+                          });
+                        }
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer"
+                    >
+                      <option value="">Seleccione Marca de Batería de Litio...</option>
+                      {lithiumBatteryBrandsList.map((brand) => (
+                        <option key={brand} value={brand}>{brand}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70">
+                        Modelo Batería de Litio
+                      </label>
+                      <button
+                        id="btn-add-custom-battery-model"
+                        type="button"
+                        onClick={() => {
+                          setCustomBatteryBrandForModel(currentBatteryBrand || lithiumBatteryBrandsList[1] || 'Dyness');
+                          setIsAddingCustomBatteryModel(true);
+                        }}
+                        className="text-[9px] font-bold text-[#15803D] hover:text-[#14532D] flex items-center gap-0.5 cursor-pointer bg-[#DCFCE7] hover:bg-[#bbf7d0] px-1.5 py-0.5 border border-[#15803D]/40 rounded-2xs transition-colors"
+                        title="Agregar un nuevo modelo de batería de litio"
+                      >
+                        <Plus className="w-3 h-3 text-[#15803D]" />
+                        <span>+ Modelo Nuevo</span>
+                      </button>
+                    </div>
+                    <select
+                      id="select-battery-model"
+                      value={currentBatteryModel}
+                      disabled={!currentBatteryBrand || currentBatteryBrand.startsWith('Sin Baterías')}
+                      onChange={(e) => {
+                        const newModel = e.target.value;
+                        const count = technical.batteryCount || 1;
+                        const { info, totalKwhStr } = formatBatteryInfo(currentBatteryBrand, newModel, count);
+                        onChangeTechnical({
+                          ...technical,
+                          batteryModel: newModel,
+                          batteryCount: count,
+                          batteryTotalKwh: totalKwhStr,
+                          batteryInfo: info
+                        });
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <option value="">
+                        {!currentBatteryBrand
+                          ? 'Primero seleccione marca de batería...'
+                          : currentBatteryBrand.startsWith('Sin Baterías')
+                          ? 'No aplica'
+                          : 'Seleccione Modelo / Capacidad...'}
+                      </option>
+                      {availableBatteryModels.map((model) => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                      Cantidad de Baterías
+                    </label>
+                    <select
+                      id="select-battery-count"
+                      value={technical.batteryCount || 1}
+                      disabled={!currentBatteryBrand || currentBatteryBrand.startsWith('Sin Baterías')}
+                      onChange={(e) => {
+                        const newCount = parseInt(e.target.value, 10) || 1;
+                        const { info, totalKwhStr } = formatBatteryInfo(currentBatteryBrand, currentBatteryModel, newCount);
+                        onChangeTechnical({
+                          ...technical,
+                          batteryCount: newCount,
+                          batteryTotalKwh: totalKwhStr,
+                          batteryInfo: info
+                        });
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {!currentBatteryBrand || currentBatteryBrand.startsWith('Sin Baterías') ? (
+                        <option value={0}>0 (No aplica)</option>
+                      ) : (
+                        Array.from({ length: 32 }, (_, i) => i + 1).map((num) => (
+                          <option key={num} value={num}>
+                            {num} {num === 1 ? 'Batería' : 'Baterías'}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5 text-[#15803D]">
+                      Suma Total Capacidad Baterías (kWh)
+                    </label>
+                    <input
+                      id="input-battery-total-kwh"
+                      type="text"
+                      readOnly
+                      value={
+                        !currentBatteryBrand || currentBatteryBrand.startsWith('Sin Baterías')
+                          ? 'Sin Baterías (0 kWh)'
+                          : (() => {
+                              const count = technical.batteryCount || 1;
+                              const unitKwh = extractBatteryKwh(currentBatteryModel);
+                              const total = (unitKwh * count).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                              return `${total} kWh (${count} x ${unitKwh} kWh)`;
+                            })()
+                      }
+                      placeholder="Total capacidad acumulada"
+                      className="w-full px-2.5 py-1.5 bg-[#ECFDF5] border border-[#15803D]/40 text-xs font-bold text-[#14532D] focus:outline-none cursor-default"
+                    />
+                  </div>
+                </>
+              )}
 
 
 

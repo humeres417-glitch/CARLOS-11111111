@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import { Inspection } from '../types';
+import { getApplicableCategories } from './powerHelper';
 
 /**
  * Generates an official Chilean SEC TE4 Solar Inspection PDF Report
@@ -387,8 +388,9 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   y += 7;
 
   let alternateBg = false;
+  const applicableCategories = getApplicableCategories(inspection.categories, inspection.technical);
 
-  inspection.categories.forEach((cat) => {
+  applicableCategories.forEach((cat) => {
     // Category Header Row
     checkAddPage(8);
     doc.setFillColor(225, 232, 242);
@@ -537,9 +539,9 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   // -------------------------------------------------------------
   // ANEXO FOTOGRÁFICO
   // -------------------------------------------------------------
-  // Collect all photos
+  // Collect all photos from applicable categories
   const photoList: { code: string; title: string; normaSec: string; photo: any }[] = [];
-  inspection.categories.forEach((cat) => {
+  applicableCategories.forEach((cat) => {
     cat.items.forEach((item) => {
       item.photos.forEach((ph) => {
         photoList.push({
