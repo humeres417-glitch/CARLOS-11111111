@@ -54,6 +54,14 @@ export interface ClientInfo {
   email: string;
 }
 
+export interface StringConfigItem {
+  stringIndex: number;
+  panelsCount: number;
+  panelBrand?: string;
+  panelModel?: string;
+  panelWatts?: number;
+}
+
 export interface TechnicalInfo {
   systemType: SystemType;
   installedPowerKwp: string;
@@ -73,6 +81,7 @@ export interface TechnicalInfo {
   stringsCount?: string;
   panelsPerString?: string;
   stringPanelCounts?: number[];
+  stringConfigs?: StringConfigItem[];
 }
 
 export interface Inspection {

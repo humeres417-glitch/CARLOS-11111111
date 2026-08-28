@@ -400,22 +400,25 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
     y += 6;
 
     cat.items.forEach((item) => {
-      checkAddPage(7);
+      const cleanTitle = item.title.trim();
+      const titleLines = doc.splitTextToSize(cleanTitle, 106);
+      const rowHeight = Math.max(6.5, (titleLines.length * 3.5) + 2.5);
+
+      checkAddPage(rowHeight + 1);
 
       if (alternateBg) {
         doc.setFillColor(248, 250, 252);
-        doc.rect(margin, y, contentWidth, 6.5, 'F');
+        doc.rect(margin, y, contentWidth, rowHeight, 'F');
       }
       alternateBg = !alternateBg;
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
       doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-      doc.text(item.code, margin + 2, y + 4.5);
+      doc.text(item.code, margin + 2, y + 4.2);
 
       doc.setFont('helvetica', 'normal');
-      const cleanTitle = item.title.trim();
-      doc.text(cleanTitle, margin + 14, y + 4.5, { maxWidth: 108 });
+      doc.text(titleLines, margin + 14, y + 4.2);
 
       // Status Badge
       const badgeX = margin + 124;
@@ -450,13 +453,13 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(60, 60, 60);
-      doc.text(`${item.photos.length} foto(s)`, margin + 154, y + 4.5, { align: 'center' });
+      doc.text(`${item.photos.length} foto(s)`, margin + 154, y + 4.2, { align: 'center' });
 
       // Observation indicator
       const obsText = item.observation ? (item.observation.length > 12 ? item.observation.slice(0, 10) + '..' : item.observation) : '-';
-      doc.text(obsText, margin + 173, y + 4.5, { align: 'center', maxWidth: 18 });
+      doc.text(obsText, margin + 173, y + 4.2, { align: 'center', maxWidth: 18 });
 
-      y += 6.5;
+      y += rowHeight;
     });
   });
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, MapPin, Cpu, ChevronDown, ChevronUp, UserCheck, Phone, ShieldCheck, Loader2, Check, Plus, X, Sun, Battery, Layers } from 'lucide-react';
-import { InstallerInfo, ClientInfo, TechnicalInfo, SystemType } from '../types';
+import { InstallerInfo, ClientInfo, TechnicalInfo, SystemType, StringConfigItem } from '../types';
 
 const CHILEAN_DISTRIBUTION_COMPANIES = [
   'Enel Distribución Chile',
@@ -33,6 +33,7 @@ interface InstallerFormProps {
   onChangeInstaller: (data: InstallerInfo) => void;
   onChangeClient: (data: ClientInfo) => void;
   onChangeTechnical: (data: TechnicalInfo) => void;
+  onResetForm?: () => void;
 }
 
 export const InstallerForm: React.FC<InstallerFormProps> = ({
@@ -42,6 +43,7 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
   onChangeInstaller,
   onChangeClient,
   onChangeTechnical,
+  onResetForm,
 }) => {
   const [isOpen, setIsOpen] = useState(true);
   const [isFetchingGps, setIsFetchingGps] = useState(false);
@@ -263,34 +265,8 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
     return 550;
   };
 
-  const unitPanelWattage = extractPanelWattage(technical.panelsCountAndPower);
-
-  const formatPanelsSummary = (numStrings: number, counts: number[], customWatts?: number): string => {
-    if (numStrings === 0 || counts.length === 0) return '';
-    const totalPanels = counts.reduce((acc, curr) => acc + (curr || 0), 0);
-    const wattsPerPanel = customWatts !== undefined ? customWatts : unitPanelWattage;
-    const totalWatts = totalPanels * wattsPerPanel;
-    const kwp = (totalWatts / 1000).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-    const allSame = counts.length > 0 && counts.every(c => c === counts[0]);
-    let panelsText = '';
-    if (allSame && (counts[0] || 0) > 0) {
-      panelsText = `${counts[0]} paneles por string (${totalPanels} total)`;
-    } else {
-      const breakdown = counts.map((c, i) => `S${i + 1}: ${c || 0}p`).join(', ');
-      panelsText = `${breakdown} (Total: ${totalPanels} paneles)`;
-    }
-
-    if (totalPanels > 0) {
-      return `${panelsText} | Potencia Total: ${totalWatts.toLocaleString('es-CL')} W (${kwp} kWp)`;
-    }
-    return panelsText;
-  };
-
   const numStrings = parseNumStrings(technical.stringsCount);
-  const totalPanelsCalculated = (technical.stringPanelCounts || []).slice(0, numStrings).reduce((acc, curr) => acc + (curr || 0), 0);
-  const totalPvWattsCalculated = totalPanelsCalculated * unitPanelWattage;
-  const totalPvKwpCalculated = (totalPvWattsCalculated / 1000).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const unitPanelWattage = extractPanelWattage(technical.panelsCountAndPower);
 
   const secCertifiedPvBrands = [
     'Jinko Solar',
@@ -800,11 +776,21 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
     });
 
     const fullStr = `${brandToUse} - ${formattedModel}`;
-    const updatedSummary = formatPanelsSummary(numStrings, technical.stringPanelCounts || [], wattsToUse);
+
+    const currentConfigs = getStringConfigList();
+    const updatedConfigs = currentConfigs.map(c => ({
+      ...c,
+      panelBrand: brandToUse,
+      panelModel: formattedModel,
+      panelWatts: wattsToUse
+    }));
+    const updatedSummary = formatPanelsSummaryFromConfigs(updatedConfigs);
 
     onChangeTechnical({
       ...technical,
       panelsCountAndPower: fullStr,
+      stringConfigs: updatedConfigs,
+      stringPanelCounts: updatedConfigs.map(c => c.panelsCount),
       panelsPerString: updatedSummary || technical.panelsPerString
     });
 
@@ -883,11 +869,21 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
     });
 
     const fullStr = `${brandName} - ${formattedModel}`;
-    const updatedSummary = formatPanelsSummary(numStrings, technical.stringPanelCounts || [], watts);
+
+    const currentConfigs = getStringConfigList();
+    const updatedConfigs = currentConfigs.map(c => ({
+      ...c,
+      panelBrand: brandName,
+      panelModel: formattedModel,
+      panelWatts: watts
+    }));
+    const updatedSummary = formatPanelsSummaryFromConfigs(updatedConfigs);
 
     onChangeTechnical({
       ...technical,
       panelsCountAndPower: fullStr,
+      stringConfigs: updatedConfigs,
+      stringPanelCounts: updatedConfigs.map(c => c.panelsCount),
       panelsPerString: updatedSummary || technical.panelsPerString
     });
 
@@ -1012,6 +1008,152 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
   const { brand: currentBatteryBrand, model: currentBatteryModel } = parseBatteryBrandAndModel(technical.batteryInfo || '');
   const availableBatteryModels = currentBatteryBrand ? (lithiumBatteryModelsMap[currentBatteryBrand] || []) : [];
 
+  // String configuration list resolver
+  const getStringConfigList = (): StringConfigItem[] => {
+    const configs = technical.stringConfigs || [];
+    const counts = technical.stringPanelCounts || [];
+    const defaultBrand = currentBrand || pvBrandsList[0] || 'Jinko Solar';
+    const defaultModel = currentModel || pvModelsMap[defaultBrand]?.[0] || '';
+    const defaultFull = defaultModel ? `${defaultBrand} - ${defaultModel}` : defaultBrand;
+    const defaultWatts = extractPanelWattage(defaultFull);
+
+    const result: StringConfigItem[] = [];
+    for (let i = 0; i < numStrings; i++) {
+      const existing = configs[i];
+      const pCount = existing?.panelsCount !== undefined 
+        ? existing.panelsCount 
+        : (counts[i] !== undefined ? counts[i] : 10);
+      const brand = existing?.panelBrand || defaultBrand;
+      const model = existing?.panelModel || defaultModel;
+      const fullStr = model ? `${brand} - ${model}` : brand;
+      const watts = existing?.panelWatts || extractPanelWattage(fullStr);
+
+      result.push({
+        stringIndex: i + 1,
+        panelsCount: pCount,
+        panelBrand: brand,
+        panelModel: model,
+        panelWatts: watts
+      });
+    }
+    return result;
+  };
+
+  const activeStringConfigs = getStringConfigList();
+  const totalPanelsCalculated = activeStringConfigs.reduce((acc, curr) => acc + (curr.panelsCount || 0), 0);
+  const totalPvWattsCalculated = activeStringConfigs.reduce((acc, curr) => acc + ((curr.panelsCount || 0) * (curr.panelWatts || 550)), 0);
+  const totalPvKwpCalculated = (totalPvWattsCalculated / 1000).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const formatPanelsSummaryFromConfigs = (configs: StringConfigItem[]): string => {
+    if (!configs || configs.length === 0) return '';
+    const totalPanels = configs.reduce((acc, curr) => acc + (curr.panelsCount || 0), 0);
+    const totalWatts = configs.reduce((acc, curr) => acc + ((curr.panelsCount || 0) * (curr.panelWatts || 550)), 0);
+    const kwp = (totalWatts / 1000).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const allSameCount = configs.every(c => c.panelsCount === configs[0]?.panelsCount);
+    const allSameBrand = configs.every(c => c.panelBrand === configs[0]?.panelBrand);
+    const allSameModel = configs.every(c => c.panelModel === configs[0]?.panelModel);
+
+    let panelsText = '';
+    if (allSameCount && allSameBrand && allSameModel && (configs[0]?.panelsCount || 0) > 0) {
+      panelsText = `${configs[0].panelsCount} paneles por string (${totalPanels} total)`;
+    } else {
+      const breakdown = configs.map((c, i) => {
+        const brandShort = c.panelBrand ? c.panelBrand.split(' ')[0] : 'Panel';
+        return `S${i + 1}: ${c.panelsCount || 0}p (${brandShort} ${c.panelWatts || 550}W)`;
+      }).join(', ');
+      panelsText = `${breakdown} (Total: ${totalPanels} paneles)`;
+    }
+
+    if (totalPanels > 0) {
+      return `${panelsText} | Potencia Total: ${totalWatts.toLocaleString('es-CL')} W (${kwp} kWp)`;
+    }
+    return panelsText;
+  };
+
+  const handleStringPanelCountChange = (idx: number, count: number) => {
+    const configs = [...getStringConfigList()];
+    if (configs[idx]) {
+      configs[idx] = {
+        ...configs[idx],
+        panelsCount: count
+      };
+      const counts = configs.map(c => c.panelsCount);
+      const summary = formatPanelsSummaryFromConfigs(configs);
+      onChangeTechnical({
+        ...technical,
+        stringConfigs: configs,
+        stringPanelCounts: counts,
+        panelsPerString: summary
+      });
+    }
+  };
+
+  const handleStringBrandChange = (idx: number, newBrand: string) => {
+    const configs = [...getStringConfigList()];
+    if (configs[idx]) {
+      const firstModel = pvModelsMap[newBrand]?.[0] || '';
+      const fullStr = firstModel ? `${newBrand} - ${firstModel}` : newBrand;
+      const watts = extractPanelWattage(fullStr);
+      configs[idx] = {
+        ...configs[idx],
+        panelBrand: newBrand,
+        panelModel: firstModel,
+        panelWatts: watts
+      };
+      const counts = configs.map(c => c.panelsCount);
+      const summary = formatPanelsSummaryFromConfigs(configs);
+      onChangeTechnical({
+        ...technical,
+        stringConfigs: configs,
+        stringPanelCounts: counts,
+        panelsPerString: summary
+      });
+    }
+  };
+
+  const handleStringModelChange = (idx: number, newModel: string) => {
+    const configs = [...getStringConfigList()];
+    if (configs[idx]) {
+      const brand = configs[idx].panelBrand || currentBrand || pvBrandsList[0] || 'Jinko Solar';
+      const fullStr = newModel ? `${brand} - ${newModel}` : brand;
+      const watts = extractPanelWattage(fullStr);
+      configs[idx] = {
+        ...configs[idx],
+        panelModel: newModel,
+        panelWatts: watts
+      };
+      const counts = configs.map(c => c.panelsCount);
+      const summary = formatPanelsSummaryFromConfigs(configs);
+      onChangeTechnical({
+        ...technical,
+        stringConfigs: configs,
+        stringPanelCounts: counts,
+        panelsPerString: summary
+      });
+    }
+  };
+
+  const handleCopyStringToAll = (idx: number) => {
+    const configs = getStringConfigList();
+    const source = configs[idx];
+    if (!source) return;
+    const updated = configs.map(c => ({
+      ...c,
+      panelBrand: source.panelBrand,
+      panelModel: source.panelModel,
+      panelWatts: source.panelWatts
+    }));
+    const counts = updated.map(c => c.panelsCount);
+    const summary = formatPanelsSummaryFromConfigs(updated);
+    onChangeTechnical({
+      ...technical,
+      stringConfigs: updated,
+      stringPanelCounts: counts,
+      panelsPerString: summary
+    });
+  };
+
   const handleCaptureGps = () => {
     if (!navigator.geolocation) {
       alert('La geolocalización no está soportada por su navegador o dispositivo.');
@@ -1095,7 +1237,19 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                 <ShieldCheck className="w-4 h-4 text-[#15803D]" />
                 Datos del Instalador Certificado SEC
               </h3>
-              <label className="text-[9px] uppercase font-mono tracking-wider text-[#15803D] font-bold">Sección 01</label>
+              <div className="flex items-center gap-2">
+                {onResetForm && (
+                  <button
+                    type="button"
+                    onClick={onResetForm}
+                    className="text-[9px] font-bold text-[#E11D48] hover:text-[#BE123C] bg-rose-50 hover:bg-rose-100 border border-[#E11D48]/30 px-2 py-0.5 rounded-2xs cursor-pointer flex items-center gap-1 transition-colors"
+                    title="Limpiar todos los datos del formulario e iniciar nuevo proceso"
+                  >
+                    <span>Limpiar Planilla</span>
+                  </button>
+                )}
+                <label className="text-[9px] uppercase font-mono tracking-wider text-[#15803D] font-bold">Sección 01</label>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 text-xs">
@@ -1297,10 +1451,19 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                       const firstModel = pvModelsMap[newBrand]?.[0] || '';
                       const fullStr = firstModel ? `${newBrand} - ${firstModel}` : newBrand;
                       const newWatts = extractPanelWattage(fullStr);
-                      const updatedSummary = formatPanelsSummary(numStrings, technical.stringPanelCounts || [], newWatts);
+                      const currentConfigs = getStringConfigList();
+                      const updatedConfigs = currentConfigs.map(c => ({
+                        ...c,
+                        panelBrand: newBrand,
+                        panelModel: firstModel,
+                        panelWatts: newWatts
+                      }));
+                      const updatedSummary = formatPanelsSummaryFromConfigs(updatedConfigs);
                       onChangeTechnical({
                         ...technical,
                         panelsCountAndPower: fullStr,
+                        stringConfigs: updatedConfigs,
+                        stringPanelCounts: updatedConfigs.map(c => c.panelsCount),
                         panelsPerString: updatedSummary || technical.panelsPerString
                       });
                     }
@@ -1342,10 +1505,19 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                     const brandPrefix = currentBrand || '';
                     const fullStr = newModel ? `${brandPrefix} - ${newModel}` : brandPrefix;
                     const newWatts = extractPanelWattage(fullStr);
-                    const updatedSummary = formatPanelsSummary(numStrings, technical.stringPanelCounts || [], newWatts);
+                    const currentConfigs = getStringConfigList();
+                    const updatedConfigs = currentConfigs.map(c => ({
+                      ...c,
+                      panelBrand: brandPrefix,
+                      panelModel: newModel,
+                      panelWatts: newWatts
+                    }));
+                    const updatedSummary = formatPanelsSummaryFromConfigs(updatedConfigs);
                     onChangeTechnical({
                       ...technical,
                       panelsCountAndPower: fullStr,
+                      stringConfigs: updatedConfigs,
+                      stringPanelCounts: updatedConfigs.map(c => c.panelsCount),
                       panelsPerString: updatedSummary || technical.panelsPerString
                     });
                   }}
@@ -1585,16 +1757,36 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                   onChange={(e) => {
                     const newStrCountVal = e.target.value;
                     const num = parseNumStrings(newStrCountVal);
-                    const currentArray = technical.stringPanelCounts || [];
-                    let updatedArray: number[] = [];
-                    if (num > 0) {
-                      updatedArray = Array.from({ length: num }, (_, i) => currentArray[i] !== undefined ? currentArray[i] : 10);
+                    const currentConfigs = getStringConfigList();
+                    const defaultBrand = currentBrand || pvBrandsList[0] || 'Jinko Solar';
+                    const defaultModel = currentModel || pvModelsMap[defaultBrand]?.[0] || '';
+                    const defaultFull = defaultModel ? `${defaultBrand} - ${defaultModel}` : defaultBrand;
+                    const defaultWatts = extractPanelWattage(defaultFull);
+
+                    const newConfigs: StringConfigItem[] = [];
+                    const newCounts: number[] = [];
+                    for (let i = 0; i < num; i++) {
+                      if (currentConfigs[i]) {
+                        newConfigs.push(currentConfigs[i]);
+                        newCounts.push(currentConfigs[i].panelsCount);
+                      } else {
+                        newConfigs.push({
+                          stringIndex: i + 1,
+                          panelsCount: 10,
+                          panelBrand: defaultBrand,
+                          panelModel: defaultModel,
+                          panelWatts: defaultWatts
+                        });
+                        newCounts.push(10);
+                      }
                     }
-                    const summary = formatPanelsSummary(num, updatedArray);
+
+                    const summary = formatPanelsSummaryFromConfigs(newConfigs);
                     onChangeTechnical({
                       ...technical,
                       stringsCount: newStrCountVal,
-                      stringPanelCounts: updatedArray,
+                      stringConfigs: newConfigs,
+                      stringPanelCounts: newCounts,
                       panelsPerString: summary
                     });
                   }}
@@ -1639,9 +1831,7 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                 <div className="sm:col-span-2 md:col-span-4 bg-[#F0FDF4] p-3 border border-[#15803D]/30 space-y-2 mt-1 rounded-xs">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#15803D]/20 pb-1.5 gap-1.5">
                     <span className="text-[11px] font-bold text-[#15803D] uppercase tracking-wide flex items-center gap-1.5">
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
-                      </svg>
+                      <Layers className="w-3.5 h-3.5 text-[#15803D]" />
                       Configuración por String ({numStrings} String{numStrings > 1 ? 's' : ''})
                     </span>
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -1654,55 +1844,115 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pt-1">
-                    {Array.from({ length: numStrings }).map((_, idx) => {
-                      const stringNum = idx + 1;
-                      const currentPanels = (technical.stringPanelCounts && technical.stringPanelCounts[idx] !== undefined)
-                        ? technical.stringPanelCounts[idx]
-                        : 0;
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5 pt-1">
+                    {activeStringConfigs.map((strConfig, idx) => {
+                      const stringNum = strConfig.stringIndex;
+                      const stringPowerWatts = (strConfig.panelsCount || 0) * (strConfig.panelWatts || 550);
+                      const stringPowerKwp = (stringPowerWatts / 1000).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                      const modelsForString = strConfig.panelBrand ? (pvModelsMap[strConfig.panelBrand] || []) : [];
+
                       return (
-                        <div key={stringNum} className="flex flex-col bg-white p-2 border border-[#15803D]/20 shadow-2xs">
-                          <label className="text-[10px] font-bold text-[#0F172A] mb-1 flex items-center justify-between">
-                            <span>String #{stringNum}</span>
-                            {currentPanels > 0 && (
-                              <span className="text-[9px] text-[#15803D] font-normal">
-                                {currentPanels} {currentPanels === 1 ? 'panel' : 'paneles'} ({currentPanels * unitPanelWattage}W)
+                        <div key={stringNum} className="flex flex-col bg-white p-2.5 border border-[#15803D]/30 shadow-2xs space-y-2 rounded-xs">
+                          <div className="flex items-center justify-between border-b border-[#15803D]/15 pb-1.5 gap-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] font-bold text-[#14532D] bg-[#DCFCE7] px-2 py-0.5 border border-[#15803D]/40 rounded-2xs flex items-center gap-1">
+                                <Sun className="w-3 h-3 text-[#15803D]" />
+                                String #{stringNum}
                               </span>
+                              {strConfig.panelsCount > 0 && (
+                                <span className="text-[9px] font-semibold text-[#15803D] bg-emerald-50 px-1.5 py-0.5 rounded-2xs border border-[#15803D]/20">
+                                  {strConfig.panelsCount}p ({stringPowerWatts.toLocaleString('es-CL')}W / {stringPowerKwp} kWp)
+                                </span>
+                              )}
+                            </div>
+                            {numStrings > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyStringToAll(idx)}
+                                className="text-[9px] font-semibold text-[#15803D] hover:text-[#14532D] hover:bg-emerald-100 px-1.5 py-0.5 border border-[#15803D]/30 rounded-2xs transition-colors cursor-pointer"
+                                title="Copiar marca y modelo de este string a todos los demás strings"
+                              >
+                                Copiar a todos
+                              </button>
                             )}
-                          </label>
-                          <select
-                            id={`select-string-${stringNum}-panels`}
-                            value={currentPanels}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value, 10) || 0;
-                              const newArray = [...(technical.stringPanelCounts || [])];
-                              while (newArray.length < numStrings) newArray.push(0);
-                              newArray[idx] = val;
-                              const summary = formatPanelsSummary(numStrings, newArray);
-                              onChangeTechnical({
-                                ...technical,
-                                stringPanelCounts: newArray,
-                                panelsPerString: summary
-                              });
-                            }}
-                            className="w-full px-2 py-1 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer"
-                          >
-                            <option value={0}>Seleccione paneles...</option>
-                            {Array.from({ length: 45 }).map((_, pIndex) => {
-                              const pVal = pIndex + 1;
-                              return (
-                                <option key={pVal} value={pVal}>
-                                  {pVal} {pVal === 1 ? 'panel' : 'paneles'} ({pVal * unitPanelWattage}W)
+                          </div>
+
+                          <div className="space-y-1.5">
+                            {/* Cantidad de paneles */}
+                            <div>
+                              <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                                Cantidad de Paneles *
+                              </label>
+                              <select
+                                id={`select-string-${stringNum}-panels`}
+                                value={strConfig.panelsCount}
+                                onChange={(e) => handleStringPanelCountChange(idx, parseInt(e.target.value, 10) || 0)}
+                                className="w-full px-2 py-1 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer"
+                              >
+                                <option value={0}>0 (Inactivo / Desconectado)</option>
+                                {Array.from({ length: 45 }).map((_, pIndex) => {
+                                  const pVal = pIndex + 1;
+                                  return (
+                                    <option key={pVal} value={pVal}>
+                                      {pVal} {pVal === 1 ? 'panel' : 'paneles'} ({pVal * (strConfig.panelWatts || 550)}W)
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+
+                            {/* Marca de Panel */}
+                            <div>
+                              <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                                Marca del Panel (String #{stringNum}) *
+                              </label>
+                              <select
+                                id={`select-string-${stringNum}-brand`}
+                                value={strConfig.panelBrand || ''}
+                                onChange={(e) => handleStringBrandChange(idx, e.target.value)}
+                                className="w-full px-2 py-1 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer"
+                              >
+                                <option value="">Seleccione marca para String #{stringNum}...</option>
+                                {pvBrandsList.map((brand) => (
+                                  <option key={brand} value={brand}>{brand}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Modelo de Panel */}
+                            <div>
+                              <div className="flex items-center justify-between mb-0.5">
+                                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70">
+                                  Modelo del Panel (String #{stringNum}) *
+                                </label>
+                                {strConfig.panelWatts && (
+                                  <span className="text-[8.5px] font-bold text-[#15803D] bg-[#DCFCE7] px-1 py-0.2 rounded-2xs">
+                                    {strConfig.panelWatts}W
+                                  </span>
+                                )}
+                              </div>
+                              <select
+                                id={`select-string-${stringNum}-model`}
+                                value={strConfig.panelModel || ''}
+                                disabled={!strConfig.panelBrand}
+                                onChange={(e) => handleStringModelChange(idx, e.target.value)}
+                                className="w-full px-2 py-1 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <option value="">
+                                  {strConfig.panelBrand ? 'Seleccione modelo...' : 'Primero seleccione marca...'}
                                 </option>
-                              );
-                            })}
-                          </select>
+                                {modelsForString.map((model) => (
+                                  <option key={model} value={model}>{model}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
                         </div>
                       );
                     })}
                   </div>
                   <p className="text-[9px] text-[#15803D] italic pt-0.5">
-                    * La potencia total se calcula automáticamente multiplicando {totalPanelsCalculated} paneles por {unitPanelWattage}W (potencia del modelo seleccionado).
+                    * Cada string calcula su potencia de forma independiente según la marca, modelo y cantidad de paneles seleccionados.
                   </p>
                 </div>
               )}

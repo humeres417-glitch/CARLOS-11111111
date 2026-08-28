@@ -1,5 +1,5 @@
 import React from 'react';
-import { HardDrive, FileText } from 'lucide-react';
+import { HardDrive, FileText, RotateCcw, History } from 'lucide-react';
 
 interface HeaderProps {
   driveConnected: boolean;
@@ -55,7 +55,29 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          {/* New / Reset Inspection Button */}
+          <button
+            id="btn-header-new-inspection"
+            onClick={onNewInspection}
+            className="px-3.5 py-1.5 rounded-full border border-[#E11D48]/30 bg-rose-50 text-[#BE123C] hover:bg-rose-100 text-[11px] uppercase tracking-wider font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+            title="Limpiar planilla y comenzar un nuevo proceso de inspección"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-[#E11D48]" />
+            <span>Limpiar / Nuevo</span>
+          </button>
+
+          {/* History Button */}
+          <button
+            id="btn-header-history"
+            onClick={onOpenHistory}
+            className="px-3 py-1.5 rounded-full border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 text-[11px] uppercase tracking-wider font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+            title="Ver historial de inspecciones guardadas"
+          >
+            <History className="w-3.5 h-3.5 text-slate-600" />
+            <span className="hidden sm:inline">Historial</span>
+          </button>
+
           {/* Google Drive Direct Button targeting te4.servilec@gmail.com */}
           <button
             id="btn-drive-sync"
@@ -64,7 +86,8 @@ export const Header: React.FC<HeaderProps> = ({
             title="Respaldo automático en Google Drive: te4.servilec@gmail.com"
           >
             <HardDrive className="w-3.5 h-3.5 text-[#DCFCE7]" />
-            <span>Drive: te4.servilec@gmail.com</span>
+            <span className="hidden md:inline">Drive: te4.servilec@gmail.com</span>
+            <span className="md:hidden">Drive</span>
           </button>
 
           {/* PDF Preview / Export Button */}

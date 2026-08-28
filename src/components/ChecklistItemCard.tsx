@@ -82,6 +82,7 @@ export const ChecklistItemCard: React.FC<ChecklistItemCardProps> = ({
   onUpdatePhotoNote,
 }) => {
   const galleryInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -353,11 +354,7 @@ export const ChecklistItemCard: React.FC<ChecklistItemCardProps> = ({
               {item.normaSec}
             </span>
           </div>
-          <h3
-            className={`text-base font-serif italic leading-snug ${
-              item.id === 'item-502' ? 'text-[#ec0a0a]' : 'text-[#0F172A]'
-            }`}
-          >
+          <h3 className="text-base font-serif italic leading-snug text-[#0F172A]">
             {item.title}
           </h3>
           <p className="text-[11px] sm:text-xs text-[#0F172A]/80 leading-relaxed font-sans">
@@ -425,6 +422,114 @@ export const ChecklistItemCard: React.FC<ChecklistItemCardProps> = ({
           <span className="italic font-serif text-[11px] sm:text-xs font-medium text-[#14532D]">{item.photoGuide}</span>
         </div>
       </div>
+
+      {/* SECCIÓN ESPECIAL: Video de Continuidad de Tierras de Canalizaciones (Ítem 4) */}
+      {(item.code === '4' || item.id === 'item-sec-04') && (() => {
+        const videoFiles = item.photos.filter(
+          (ph) => ph.id.startsWith('vid-') || ph.url.startsWith('data:video/') || /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(ph.name || '')
+        );
+        const hasContinuityVideo = videoFiles.length > 0;
+
+        return (
+          <div className="border-2 border-[#15803D] bg-[#F0FDF4] p-3 sm:p-4 space-y-3 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#15803D]/30 pb-2">
+              <div className="flex items-start gap-2.5">
+                <div className="p-1.5 bg-[#15803D] text-white shrink-0 mt-0.5">
+                  <Video className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold font-mono uppercase tracking-wider text-[#14532D] flex items-center gap-1.5 flex-wrap">
+                    <span>Sección de Video: Continuidad de Tierras de Canalización</span>
+                    <span className="text-[9px] bg-[#14532D] text-white px-1.5 py-0.5 font-mono font-bold">RIC N°06 § 7.2 / RIC N°04</span>
+                  </h4>
+                  <p className="text-[11px] text-[#14532D]/90 font-sans mt-0.5 leading-snug">
+                    Registro audiovisual comprobando con multímetro o telurómetro la continuidad eléctrica de tierra entre canalizaciones metálicas (EMT, bandejas, cajas de derivación) y la barra de tierra principal.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 self-start sm:self-auto shrink-0">
+                {hasContinuityVideo ? (
+                  <span className="bg-[#15803D] text-white text-[9px] font-mono font-bold px-2 py-1 border border-[#14532D] flex items-center gap-1">
+                    <Check className="w-3 h-3" /> {videoFiles.length} Video(s) Adjunto(s)
+                  </span>
+                ) : (
+                  <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-mono font-bold px-2 py-1 flex items-center gap-1">
+                    <Circle className="w-2.5 h-2.5 fill-amber-600 text-amber-600 animate-pulse" /> Video Pendiente
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Action Buttons for Continuity Video */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                id="btn-record-continuity-live"
+                type="button"
+                onClick={() => setIsLiveCameraOpen(true)}
+                className="px-3.5 py-1.5 bg-[#14532D] hover:bg-[#15803D] text-white text-[10px] uppercase font-mono font-bold tracking-wider flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                title="Abrir cámara y grabar video de continuidad en vivo"
+              >
+                <Circle className="w-3 h-3 fill-red-500 text-red-500 animate-pulse" />
+                <span>Grabar Video Continuidad</span>
+              </button>
+
+              <button
+                id="btn-upload-continuity-file"
+                type="button"
+                onClick={() => videoInputRef.current?.click()}
+                className="px-3.5 py-1.5 bg-white hover:bg-emerald-50 text-[#14532D] border border-[#15803D] text-[10px] uppercase font-mono font-bold tracking-wider flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                title="Cargar archivo de video grabado desde el dispositivo"
+              >
+                <Video className="w-3.5 h-3.5 text-[#15803D]" />
+                <span>Subir Video (MP4 / WebM / MOV)</span>
+              </button>
+              <input
+                ref={videoInputRef}
+                type="file"
+                accept="video/*"
+                onChange={(e) => handleFiles(e.target.files)}
+                className="hidden"
+              />
+            </div>
+
+            {/* In-Card Video Previews if videos are attached */}
+            {hasContinuityVideo && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                {videoFiles.map((vid, vIdx) => (
+                  <div key={vid.id} className="bg-slate-900 border border-[#15803D] p-2 flex flex-col space-y-1.5">
+                    <div className="flex items-center justify-between text-white text-[9px] font-mono border-b border-slate-700 pb-1">
+                      <span className="font-bold text-emerald-400 flex items-center gap-1">
+                        <Video className="w-3 h-3 text-emerald-400" /> Video #{vIdx + 1}: Continuidad de Tierra
+                      </span>
+                      <span className="opacity-70">{vid.timestamp}</span>
+                    </div>
+                    <video
+                      src={vid.url}
+                      controls
+                      playsInline
+                      className="w-full max-h-48 bg-black object-contain"
+                    />
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[9px] font-mono text-slate-300 truncate max-w-[200px]">
+                        {vid.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onRemovePhoto(item.id, vid.id)}
+                        className="text-[10px] font-mono uppercase font-bold text-rose-400 hover:text-rose-200 cursor-pointer"
+                        title="Eliminar este video"
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Observations Field */}
       <div>

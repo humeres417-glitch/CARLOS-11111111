@@ -7,12 +7,85 @@ import { PdfPreviewModal } from './components/PdfPreviewModal';
 import { HistoryModal } from './components/HistoryModal';
 import { AndroidInstallModal } from './components/AndroidInstallModal';
 import { INITIAL_TE4_CATEGORIES } from './data/te4NormativeCategories';
-import { Inspection, InstallerInfo, ClientInfo, TechnicalInfo, ItemStatus, PhotoItem } from './types';
+import { Inspection, InstallerInfo, ClientInfo, TechnicalInfo, ItemStatus, PhotoItem, ChecklistCategory } from './types';
 import { TARGET_DRIVE_ACCOUNT } from './utils/googleDrive';
-import { Save, CheckCircle, FileText, HardDrive, Shield, AlertTriangle, Smartphone } from 'lucide-react';
+import { Save, CheckCircle, FileText, HardDrive, Shield, AlertTriangle, Smartphone, RotateCcw, PlusCircle } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY = 'te4_inspection_active_v1';
 const LOCAL_STORAGE_LIST_KEY = 'te4_inspections_history_v1';
+
+function migrateTo19SecCategories(existingCategories: any[]): ChecklistCategory[] {
+  const fresh: ChecklistCategory[] = JSON.parse(JSON.stringify(INITIAL_TE4_CATEGORIES));
+  if (!Array.isArray(existingCategories) || existingCategories.length === 0) {
+    return fresh;
+  }
+
+  const isSec19 = existingCategories.some(
+    (cat) => cat.id === 'cat-sec-01' || (cat.items && cat.items.some((it: any) => it.id === 'item-sec-01'))
+  );
+
+  if (isSec19) {
+    fresh.forEach((freshCat) => {
+      const matchCat = existingCategories.find((c) => c.id === freshCat.id);
+      if (matchCat) {
+        freshCat.items.forEach((freshItem) => {
+          const matchItem = matchCat.items?.find((i: any) => i.id === freshItem.id);
+          if (matchItem) {
+            freshItem.status = matchItem.status || 'PENDIENTE';
+            freshItem.observation = matchItem.observation || '';
+            freshItem.photos = matchItem.photos || [];
+          }
+        });
+      }
+    });
+    return fresh;
+  }
+
+  const oldToNewMap: Record<string, string> = {
+    'item-604': 'item-sec-01',
+    'item-101': 'item-sec-02',
+    'item-103': 'item-sec-03',
+    'item-102': 'item-sec-04',
+    'item-204': 'item-sec-04',
+    'item-301': 'item-sec-05',
+    'item-302': 'item-sec-05',
+    'item-201': 'item-sec-06',
+    'item-501': 'item-sec-08',
+    'item-104': 'item-sec-08',
+    'item-503': 'item-sec-08',
+    'item-603': 'item-sec-09',
+    'item-202': 'item-sec-10',
+    'item-203': 'item-sec-11',
+    'item-303': 'item-sec-12',
+    'item-502': 'item-sec-12',
+  };
+
+  existingCategories.forEach((oldCat) => {
+    oldCat.items?.forEach((oldItem: any) => {
+      const targetId = oldToNewMap[oldItem.id];
+      if (targetId) {
+        fresh.forEach((freshCat) => {
+          const targetItem = freshCat.items.find((it) => it.id === targetId);
+          if (targetItem) {
+            if (oldItem.photos && oldItem.photos.length > 0) {
+              targetItem.photos = [...targetItem.photos, ...oldItem.photos];
+            }
+            if (oldItem.status && oldItem.status !== 'PENDIENTE') {
+              targetItem.status = oldItem.status;
+            }
+            if (oldItem.observation) {
+              targetItem.observation = targetItem.observation
+                ? `${targetItem.observation} | ${oldItem.observation}`
+                : oldItem.observation;
+            }
+          }
+        });
+      }
+    });
+  });
+
+  return fresh;
+}
 
 export default function App() {
   // Initialize state
@@ -21,100 +94,10 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed?.categories) {
-          parsed.categories.forEach((cat: any) => {
-            if (cat.id === 'cat-02') {
-              cat.title = '2. Tableros Instalación Fotovoltaica';
-            }
-            if (cat.id === 'cat-05' && cat.items && !cat.items.some((it: any) => it.id === 'item-504')) {
-              cat.items.push({
-                id: 'item-504',
-                code: '5.4',
-                title: 'Video Comprobando Continuidad de Tierra en Canalizaciones AC y DC',
-                normaSec: 'RIC N°06 § 7.2 / RIC N°04',
-                description: 'Verificación mediante registro en video comprobando la continuidad de tierra de las canalizaciones de AC y DC con multímetro o instrumento de prueba.',
-                photoGuide: 'Video o fotos comprobando la continuidad de tierra de las canalizaciones AC y DC.',
-                status: 'PENDIENTE',
-                observation: '',
-                photos: []
-              });
-            }
-            if (cat.id === 'cat-06' && cat.items && !cat.items.some((it: any) => it.id === 'item-604')) {
-              cat.items.push({
-                id: 'item-604',
-                code: '6.4',
-                title: 'Fachada de la Propiedad y Numeración',
-                normaSec: 'RIC N°02 / RIC N°10',
-                description: 'Evidencia fotográfica de la fachada principal de la propiedad donde se aprecie claramente el inmueble y su numeración municipal.',
-                photoGuide: 'Foto general de la fachada de la propiedad mostrando la numeración visible del inmueble.',
-                status: 'PENDIENTE',
-                observation: '',
-                photos: []
-              });
-            }
-            if (cat.items) {
-              cat.items = cat.items.filter((it: any) => it.id !== 'item-403');
-            }
-            cat.items?.forEach((it: any) => {
-              if (it.id === 'item-102') {
-                it.title = 'Verificación de Cables Solares';
-                it.description = 'Verificación de cables solar sin tocar techumbre, asegurando la adecuada fijación y protección UV.';
-                it.photoGuide = 'Foto de la canalización/tendido de cable solar verificando que no exista contacto directo con la techumbre.';
-              }
-              if (it.id === 'item-103') {
-                it.description = 'Verificar que conectores MC4 queden bien armados y que no queden expuestos a la intemperie, protegidos bajo paneles.';
-                it.photoGuide = 'Foto de conectores MC4 bien armados y protegidos bajo los paneles solares.';
-              }
-              if (it.id === 'item-201') {
-                it.title = 'Foto Tablero FV Interior y Exterior';
-              }
-              if (it.id === 'item-202') {
-                it.title = 'Fotografías Tableros Existentes';
-                it.description = 'Sacar fotografía en donde se vean claros la capacidad de las protecciones.';
-                it.photoGuide = 'Foto en donde se aprecie claramente la capacidad y amperaje de las protecciones.';
-              }
-              if (it.id === 'item-203') {
-                it.title = 'Fotografía Selector ATS';
-                it.description = 'Verificar existencia de selector de GRID y BACKUP para conmutación en caso de mantención o fallo del sistema FV.';
-                it.photoGuide = 'Foto del selector ATS/conmutador GRID y BACKUP mostrando su estado y posición.';
-              }
-              if (it.id === 'item-204') {
-                it.title = 'Canalización String, Aterrizaje Tierra de Cajas Metálicas';
-                it.description = 'Verificar canalización de String C.C. y el correcto aterrizaje a tierra de las cajas metálicas y canalizaciones.';
-                it.photoGuide = 'Foto de la canalización de String y aterrizaje a tierra de las cajas metálicas.';
-              }
-              if (it.id === 'item-303') {
-                it.title = 'Interruptor Desconectador Banco de baterias';
-              }
-              if (it.id === 'item-502') {
-                it.title = 'Canalización Baterías Abierta y Cerrada';
-                it.description = 'Verificar tipo de canalización de baterías (abierta y cerrada), su fijación, protección y aislamiento.';
-                it.photoGuide = 'Foto de la canalización abierta y cerrada del banco de baterías.';
-              }
-              if (it.id === 'item-504') {
-                it.title = 'Video Comprobando Continuidad de Tierra en Canalizaciones AC y DC';
-                it.description = 'Verificación mediante registro en video comprobando la continuidad de tierra de las canalizaciones de AC y DC con multímetro o instrumento de prueba.';
-                it.photoGuide = 'Video o fotos comprobando la continuidad de tierra de las canalizaciones AC y DC.';
-              }
-              if (it.id === 'item-602') {
-                it.title = 'Dibujo de Instalación (Distancias, Equipos y Empalme)';
-                it.description = 'Dibujo de instalación con distancias de canalización, ubicación de equipos y punto de empalme, además del esquema unifilar.';
-                it.photoGuide = 'Foto del dibujo o croquis de la instalación indicando distancias de canalización, equipos y empalme.';
-              }
-              if (it.id === 'item-603') {
-                it.title = 'Medidor Distribuidora con Rotulación Normativa';
-                it.description = 'Verificar instalación, rotulación normativa y registro del medidor de la empresa distribuidora de energía eléctrica.';
-                it.photoGuide = 'Foto en detalle del medidor de la empresa distribuidora, su rotulación normativa y empalme.';
-              }
-              if (it.id === 'item-604') {
-                it.title = 'Fachada de la Propiedad y Numeración';
-                it.description = 'Evidencia fotográfica de la fachada principal de la propiedad donde se aprecie claramente el inmueble y su numeración municipal.';
-                it.photoGuide = 'Foto general de la fachada de la propiedad mostrando la numeración visible del inmueble.';
-              }
-            });
-          });
+        if (parsed) {
+          parsed.categories = migrateTo19SecCategories(parsed.categories || []);
+          return parsed;
         }
-        return parsed;
       } catch (e) {
         console.error('Error parsing stored inspection:', e);
       }
@@ -356,7 +339,11 @@ export default function App() {
   };
 
   const handleLoadInspectionFromHistory = (insp: Inspection) => {
-    setInspection(insp);
+    const migrated = {
+      ...insp,
+      categories: migrateTo19SecCategories(insp.categories || []),
+    };
+    setInspection(migrated);
   };
 
   const handleDeleteInspectionFromHistory = (id: string) => {
@@ -380,7 +367,7 @@ export default function App() {
 
   // Export JSON backup
   const handleExportJsonBackup = () => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(savedInspectionsList));
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(savedInspectionsList, null, 2));
     const a = document.createElement('a');
     a.href = dataStr;
     a.download = `TE4_Inspecciones_Respaldo_${new Date().toISOString().slice(0, 10)}.json`;
@@ -396,11 +383,15 @@ export default function App() {
       try {
         const imported = JSON.parse(e.target?.result as string);
         if (Array.isArray(imported)) {
-          setSavedInspectionsList(imported);
-          if (imported.length > 0) {
-            setInspection(imported[0]);
+          const migratedList = imported.map((item) => ({
+            ...item,
+            categories: migrateTo19SecCategories(item.categories || []),
+          }));
+          setSavedInspectionsList(migratedList);
+          if (migratedList.length > 0) {
+            setInspection(migratedList[0]);
           }
-          alert('¡Respaldo importado correctamente!');
+          alert('¡Respaldo importado y actualizado al orden SEC!');
         }
       } catch (err) {
         alert('Error al leer archivo de respaldo JSON.');
@@ -462,6 +453,7 @@ export default function App() {
           onChangeInstaller={handleUpdateInstaller}
           onChangeClient={handleUpdateClient}
           onChangeTechnical={handleUpdateTechnical}
+          onResetForm={handleNewInspection}
         />
 
         {/* Checklist Categories & Photo Upload Cards */}
@@ -524,6 +516,16 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end flex-wrap">
+            <button
+              id="btn-bottom-new"
+              onClick={handleNewInspection}
+              className="px-3.5 py-2 border border-rose-300 bg-rose-50 hover:bg-rose-100 text-[#BE123C] text-[10px] uppercase font-mono tracking-widest font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              title="Limpiar planilla y comenzar un nuevo proceso"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-[#E11D48]" />
+              <span>Limpiar / Nuevo</span>
+            </button>
+
             <button
               id="btn-bottom-save"
               onClick={handleManualSave}
