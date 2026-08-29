@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { User, MapPin, Cpu, ChevronDown, ChevronUp, UserCheck, Phone, ShieldCheck, Loader2, Check, Plus, X, Sun, Battery, Layers } from 'lucide-react';
+import { User, MapPin, Cpu, ChevronDown, ChevronUp, UserCheck, Phone, ShieldCheck, Loader2, Check, Plus, X, Sun, Battery, Layers, FileSpreadsheet, Save, CheckCircle2 } from 'lucide-react';
 import { InstallerInfo, ClientInfo, TechnicalInfo, SystemType, StringConfigItem } from '../types';
+import { getStoredInstallers, saveStoredInstallers } from '../data/defaultInstallers';
+import { InstallersPlanillaModal } from './InstallersPlanillaModal';
 
 const CHILEAN_DISTRIBUTION_COMPANIES = [
   'Enel Distribución Chile',
@@ -208,15 +210,11 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
   const [newBatteryModelName, setNewBatteryModelName] = useState('');
   const [newBatteryModelKwh, setNewBatteryModelKwh] = useState('5.12');
 
-  const [installerList, setInstallerList] = useState<string[]>([
-    'FELIPE VERAGUA',
-    'SEBASTIAN LEIVA',
-    'CARLOS HUMERES',
-    'XAVIER CORNEJO',
-    'BASTIAN HIDALGO'
-  ]);
+  const [installersRegistry, setInstallersRegistry] = useState<InstallerInfo[]>(() => getStoredInstallers());
+  const [isPlanillaModalOpen, setIsPlanillaModalOpen] = useState(false);
   const [isAddingCustomInstaller, setIsAddingCustomInstaller] = useState(false);
   const [newInstallerName, setNewInstallerName] = useState('');
+  const [saveToPlanillaFeedback, setSaveToPlanillaFeedback] = useState<string | null>(null);
 
   const systemTypes: SystemType[] = ['On-Grid (Netbilling)', 'Off-Grid (Aislado)', 'Híbrido (Con Baterías)'];
 
@@ -800,6 +798,80 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
     setNewCustomBrandInput('');
   };
 
+  const handleSaveInstallersRegistry = (newList: InstallerInfo[]) => {
+    setInstallersRegistry(newList);
+    saveStoredInstallers(newList);
+  };
+
+  const handleSelectInstallerChange = (selectedName: string) => {
+    if (!selectedName) {
+      onChangeInstaller({
+        ...installer,
+        name: '',
+        rut: '',
+        secLicenceNumber: '',
+        phone: '',
+        email: '',
+      });
+      return;
+    }
+
+    const matched = installersRegistry.find(
+      (i) => i.name.trim().toUpperCase() === selectedName.trim().toUpperCase()
+    );
+
+    if (matched) {
+      onChangeInstaller({
+        name: matched.name,
+        rut: matched.rut || '',
+        secClass: matched.secClass || 'Clase A',
+        secLicenceNumber: matched.secLicenceNumber || '',
+        phone: matched.phone || '',
+        email: matched.email || '',
+        companyName: matched.companyName || installer.companyName || 'SERVILEC ENERGÍA SpA'
+      });
+    } else {
+      onChangeInstaller({
+        ...installer,
+        name: selectedName
+      });
+    }
+  };
+
+  const handleSaveCurrentInstallerToRegistry = () => {
+    const cleanName = installer.name.trim().toUpperCase();
+    if (!cleanName) {
+      alert('Por favor ingrese un nombre de instalador antes de guardar en la planilla.');
+      return;
+    }
+
+    const currentData: InstallerInfo = {
+      name: cleanName,
+      rut: installer.rut?.trim().toUpperCase() || '',
+      secClass: installer.secClass || 'Clase A',
+      secLicenceNumber: installer.secLicenceNumber?.trim().toUpperCase() || '',
+      phone: installer.phone?.trim() || '',
+      email: installer.email?.trim().toLowerCase() || '',
+      companyName: installer.companyName?.trim() || 'SERVILEC ENERGÍA SpA'
+    };
+
+    const existingIdx = installersRegistry.findIndex(
+      (i) => i.name.trim().toUpperCase() === cleanName
+    );
+
+    let updatedList: InstallerInfo[];
+    if (existingIdx !== -1) {
+      updatedList = [...installersRegistry];
+      updatedList[existingIdx] = currentData;
+    } else {
+      updatedList = [...installersRegistry, currentData];
+    }
+
+    handleSaveInstallersRegistry(updatedList);
+    setSaveToPlanillaFeedback(`¡Datos de ${cleanName} guardados y actualizados en la Planilla!`);
+    setTimeout(() => setSaveToPlanillaFeedback(null), 3500);
+  };
+
   const handleSaveCustomInstaller = () => {
     const formattedName = newInstallerName.trim().toUpperCase();
 
@@ -808,17 +880,28 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
       return;
     }
 
-    setInstallerList((prev) => {
-      if (!prev.includes(formattedName)) {
-        return [...prev, formattedName];
-      }
-      return prev;
-    });
+    const newInst: InstallerInfo = {
+      name: formattedName,
+      rut: installer.rut || '',
+      secClass: installer.secClass || 'Clase A',
+      secLicenceNumber: installer.secLicenceNumber || '',
+      phone: installer.phone || '',
+      email: installer.email || '',
+      companyName: installer.companyName || 'SERVILEC ENERGÍA SpA'
+    };
 
-    onChangeInstaller({
-      ...installer,
-      name: formattedName
-    });
+    const existingIdx = installersRegistry.findIndex((i) => i.name.toUpperCase() === formattedName);
+    let updatedList: InstallerInfo[];
+    if (existingIdx !== -1) {
+      updatedList = [...installersRegistry];
+      updatedList[existingIdx] = newInst;
+    } else {
+      updatedList = [...installersRegistry, newInst];
+    }
+
+    handleSaveInstallersRegistry(updatedList);
+
+    onChangeInstaller(newInst);
 
     setIsAddingCustomInstaller(false);
     setNewInstallerName('');
@@ -1232,17 +1315,27 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
         <div className="p-3 sm:p-5 space-y-4 bg-[#F8FAF9]">
           {/* Grid 1: Instalador Certificado SEC */}
           <div className="bg-white p-3.5 border-l-4 border-l-[#15803D] border border-[#15803D]/20 space-y-2.5 shadow-2xs">
-            <div className="border-b border-[#15803D]/30 pb-1.5 flex items-baseline justify-between">
+            <div className="border-b border-[#15803D]/30 pb-1.5 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-base font-serif italic text-[#14532D] font-bold flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-[#15803D]" />
                 Datos del Instalador Certificado SEC
               </h3>
               <div className="flex items-center gap-2">
+                <button
+                  id="btn-open-installers-planilla-top"
+                  type="button"
+                  onClick={() => setIsPlanillaModalOpen(true)}
+                  className="text-[10px] font-bold text-[#14532D] hover:text-[#0F172A] bg-[#DCFCE7] hover:bg-[#bbf7d0] border border-[#15803D]/40 px-2.5 py-1 rounded-2xs cursor-pointer flex items-center gap-1.5 transition-colors shadow-2xs"
+                  title="Abrir y editar la planilla de instaladores predefinidos"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-[#15803D]" />
+                  <span>Planilla de Instaladores</span>
+                </button>
                 {onResetForm && (
                   <button
                     type="button"
                     onClick={onResetForm}
-                    className="text-[9px] font-bold text-[#E11D48] hover:text-[#BE123C] bg-rose-50 hover:bg-rose-100 border border-[#E11D48]/30 px-2 py-0.5 rounded-2xs cursor-pointer flex items-center gap-1 transition-colors"
+                    className="text-[9px] font-bold text-[#E11D48] hover:text-[#BE123C] bg-rose-50 hover:bg-rose-100 border border-[#E11D48]/30 px-2 py-1 rounded-2xs cursor-pointer flex items-center gap-1 transition-colors"
                     title="Limpiar todos los datos del formulario e iniciar nuevo proceso"
                   >
                     <span>Limpiar Planilla</span>
@@ -1252,34 +1345,45 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
               </div>
             </div>
 
+            {saveToPlanillaFeedback && (
+              <div className="bg-[#DCFCE7] border border-[#15803D]/40 px-3 py-1.5 text-xs text-[#14532D] font-bold flex items-center gap-2 rounded-2xs animate-fadeIn">
+                <CheckCircle2 className="w-4 h-4 text-[#15803D]" />
+                <span>{saveToPlanillaFeedback}</span>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 text-xs">
               <div>
                 <div className="flex items-center justify-between mb-0.5">
                   <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70">
-                    Nombre Completo Instalador *
+                    Seleccionar Instalador *
                   </label>
-                  <button
-                    id="btn-add-custom-installer"
-                    type="button"
-                    onClick={() => setIsAddingCustomInstaller(true)}
-                    className="text-[9px] font-bold text-[#15803D] hover:text-[#14532D] flex items-center gap-0.5 cursor-pointer bg-[#DCFCE7] hover:bg-[#bbf7d0] px-1.5 py-0.5 border border-[#15803D]/40 rounded-2xs transition-colors"
-                    title="Agregar un nuevo instalador"
-                  >
-                    <Plus className="w-3 h-3 text-[#15803D]" />
-                    <span>+ Instalador Nuevo</span>
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      id="btn-add-custom-installer"
+                      type="button"
+                      onClick={() => setIsPlanillaModalOpen(true)}
+                      className="text-[9px] font-bold text-[#15803D] hover:text-[#14532D] flex items-center gap-0.5 cursor-pointer bg-[#DCFCE7] hover:bg-[#bbf7d0] px-1.5 py-0.5 border border-[#15803D]/40 rounded-2xs transition-colors"
+                      title="Administrar o agregar nuevo instalador"
+                    >
+                      <Plus className="w-3 h-3 text-[#15803D]" />
+                      <span>+ Gestionar</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="relative">
                   <User className="w-3.5 h-3.5 absolute left-2.5 top-2.5 opacity-40 pointer-events-none z-10" />
                   <select
                     id="select-installer-name"
                     value={installer.name}
-                    onChange={(e) => onChangeInstaller({ ...installer, name: e.target.value })}
-                    className="w-full pl-8 pr-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer"
+                    onChange={(e) => handleSelectInstallerChange(e.target.value)}
+                    className="w-full pl-8 pr-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/40 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer font-bold"
                   >
                     <option value="">Seleccione Instalador...</option>
-                    {installerList.map((name) => (
-                      <option key={name} value={name}>{name}</option>
+                    {installersRegistry.map((inst) => (
+                      <option key={inst.name} value={inst.name}>
+                        {inst.name} ({inst.secClass} • {inst.secLicenceNumber || 'Sin Lic.'})
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1295,7 +1399,7 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                   value={installer.rut}
                   onChange={(e) => onChangeInstaller({ ...installer, rut: e.target.value })}
                   placeholder="Ej. 12.345.678-9"
-                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none"
+                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none font-medium"
                 />
               </div>
 
@@ -1357,6 +1461,27 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                   className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none"
                 />
               </div>
+            </div>
+
+            {/* Quick sync bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#15803D]/20 text-[11px] text-slate-600 bg-[#F8FAF9] p-2 rounded-2xs">
+              <span className="flex items-center gap-1.5 text-[#14532D]">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#15803D]" />
+                <span>
+                  Al seleccionar un instalador, sus datos se cargan automáticamente desde la planilla predefinida.
+                </span>
+              </span>
+              {installer.name && (
+                <button
+                  type="button"
+                  onClick={handleSaveCurrentInstallerToRegistry}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-50 text-[#14532D] border border-[#15803D]/30 hover:border-[#15803D] rounded-2xs font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                  title="Guardar cualquier cambio realizado a este instalador directamente en la planilla persistente"
+                >
+                  <Save className="w-3 h-3 text-[#15803D]" />
+                  <span>Guardar cambios en Planilla</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -2508,6 +2633,20 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal / Planilla Editable de Instaladores Certificados SEC */}
+      <InstallersPlanillaModal
+        isOpen={isPlanillaModalOpen}
+        onClose={() => setIsPlanillaModalOpen(false)}
+        installers={installersRegistry}
+        onSaveInstallers={handleSaveInstallersRegistry}
+        onSelectInstaller={(inst) => {
+          onChangeInstaller(inst);
+          setSaveToPlanillaFeedback(`¡Instalador ${inst.name} seleccionado y cargado en el formulario!`);
+          setTimeout(() => setSaveToPlanillaFeedback(null), 3000);
+        }}
+        currentSelectedName={installer.name}
+      />
     </div>
   );
 };

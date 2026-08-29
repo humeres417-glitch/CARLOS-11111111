@@ -1,6 +1,112 @@
 import jsPDF from 'jspdf';
-import { Inspection } from '../types';
+import { Inspection, PhotoItem } from '../types';
 import { getApplicableCategories } from './powerHelper';
+
+interface PreparedPdfImage {
+  dataUrl: string;
+  format: 'JPEG' | 'PNG';
+  aspectRatio: number;
+  width: number;
+  height: number;
+  isVideo: boolean;
+}
+
+/**
+ * Pre-processes and normalizes image for jsPDF to prevent crashes,
+ * preserve original aspect ratio, and handle any EXIF or format anomalies.
+ */
+async function prepareImageForPdf(url: string, id?: string, name?: string): Promise<PreparedPdfImage | null> {
+  if (!url) return null;
+
+  const isVideo = (id && id.startsWith('vid-')) || url.startsWith('data:video/') || /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(name || '');
+  if (isVideo) {
+    return {
+      dataUrl: '',
+      format: 'JPEG',
+      aspectRatio: 16 / 9,
+      width: 640,
+      height: 360,
+      isVideo: true,
+    };
+  }
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    const timeout = setTimeout(() => {
+      resolve(null);
+    }, 6000);
+
+    img.onload = () => {
+      clearTimeout(timeout);
+      try {
+        const naturalW = img.naturalWidth || img.width || 800;
+        const naturalH = img.naturalHeight || img.height || 600;
+        const aspectRatio = naturalW / naturalH;
+
+        const maxDim = 1600;
+        let targetW = naturalW;
+        let targetH = naturalH;
+        if (targetW > maxDim || targetH > maxDim) {
+          if (targetW > targetH) {
+            targetH = Math.round((targetH * maxDim) / targetW);
+            targetW = maxDim;
+          } else {
+            targetW = Math.round((targetW * maxDim) / targetH);
+            targetH = maxDim;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, targetW, targetH);
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+          const normalizedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+          resolve({
+            dataUrl: normalizedDataUrl,
+            format: 'JPEG',
+            aspectRatio: targetW / targetH,
+            width: targetW,
+            height: targetH,
+            isVideo: false,
+          });
+        } else {
+          resolve({
+            dataUrl: url,
+            format: 'JPEG',
+            aspectRatio,
+            width: naturalW,
+            height: naturalH,
+            isVideo: false,
+          });
+        }
+      } catch (e) {
+        console.warn('Canvas normalization fallback:', e);
+        resolve({
+          dataUrl: url,
+          format: 'JPEG',
+          aspectRatio: (img.naturalWidth || 800) / (img.naturalHeight || 600),
+          width: img.naturalWidth || 800,
+          height: img.naturalHeight || 600,
+          isVideo: false,
+        });
+      }
+    };
+
+    img.onerror = () => {
+      clearTimeout(timeout);
+      console.warn('Failed to load image for PDF:', url);
+      resolve(null);
+    };
+
+    img.src = url;
+  });
+}
 
 /**
  * Generates an official Chilean SEC TE4 Solar Inspection PDF Report
@@ -540,104 +646,209 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   // ANEXO FOTOGRÁFICO
   // -------------------------------------------------------------
   // Collect all photos from applicable categories
-  const photoList: { code: string; title: string; normaSec: string; photo: any }[] = [];
+  const rawPhotoList: {
+    code: string;
+    title: string;
+    normaSec: string;
+    status: string;
+    observation?: string;
+    photo: PhotoItem;
+  }[] = [];
+
   applicableCategories.forEach((cat) => {
     cat.items.forEach((item) => {
       item.photos.forEach((ph) => {
-        photoList.push({
+        rawPhotoList.push({
           code: item.code,
           title: item.title,
           normaSec: item.normaSec,
+          status: item.status,
+          observation: item.observation,
           photo: ph,
         });
       });
     });
   });
 
-  if (photoList.length > 0) {
+  if (rawPhotoList.length > 0) {
+    // Pre-process and normalize all images concurrently
+    const preparedPhotos = await Promise.all(
+      rawPhotoList.map(async (item) => {
+        const prepared = await prepareImageForPdf(item.photo.url, item.photo.id, item.photo.name);
+        return {
+          ...item,
+          prepared,
+        };
+      })
+    );
+
     doc.addPage();
     y = margin;
     drawHeaderFooter();
 
-    doc.setFillColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-    doc.roundedRect(margin, y, contentWidth, 12, 2, 2, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('ANEXO FOTOGRÁFICO - EVIDENCIA DE INSPECCIÓN TE4', margin + 6, y + 8);
+    const drawPhotoPageHeader = (isContinuation: boolean) => {
+      doc.setFillColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
+      doc.roundedRect(margin, y, contentWidth, 11, 2, 2, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.text(
+        isContinuation
+          ? 'ANEXO FOTOGRÁFICO - EVIDENCIA DE INSPECCIÓN TE4 (Continuación)'
+          : 'ANEXO FOTOGRÁFICO - EVIDENCIA DE INSPECCIÓN TE4',
+        margin + 5,
+        y + 7.2
+      );
+      y += 15;
+    };
 
-    y += 18;
+    drawPhotoPageHeader(false);
 
-    const imgWidth = 82;
-    const imgHeight = 62;
+    const gapX = 8;
+    const cardWidth = (contentWidth - gapX) / 2; // 87 mm
+    const cardHeight = 74; // 74 mm per card
+    const gapY = 6;
     const itemsPerRow = 2;
+    const maxPageY = pageHeight - margin - 15; // safe boundary before footer
 
-    for (let i = 0; i < photoList.length; i++) {
-      const item = photoList[i];
+    for (let i = 0; i < preparedPhotos.length; i++) {
+      const item = preparedPhotos[i];
       const col = i % itemsPerRow;
-      const posX = margin + col * (imgWidth + 10);
+      const posX = margin + col * (cardWidth + gapX);
 
-      if (col === 0 && i > 0 && i % 4 === 0) {
+      // Check if new row fits on current page
+      if (col === 0 && y + cardHeight > maxPageY) {
         doc.addPage();
         y = margin;
         drawHeaderFooter();
-
-        doc.setFillColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-        doc.roundedRect(margin, y, contentWidth, 12, 2, 2, 'F');
-        doc.setTextColor(255, 255, 255);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.text('ANEXO FOTOGRÁFICO (Continuación)', margin + 6, y + 8);
-        y += 18;
+        drawPhotoPageHeader(true);
       }
 
-      // Draw Photo Card Container
-      doc.setFillColor(250, 251, 253);
+      // Draw Main Card Outline Container
+      doc.setFillColor(252, 253, 255);
       doc.setDrawColor(borderGray[0], borderGray[1], borderGray[2]);
-      doc.roundedRect(posX, y, imgWidth, imgHeight + 16, 2, 2, 'FD');
+      doc.setLineWidth(0.3);
+      doc.roundedRect(posX, y, cardWidth, cardHeight, 2, 2, 'FD');
 
-      // Title header
+      // Card Header Banner
+      doc.setFillColor(235, 243, 238);
+      doc.roundedRect(posX + 1.5, y + 1.5, cardWidth - 3, 7.5, 1.5, 1.5, 'F');
+
+      // Item Code badge
+      doc.setFillColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
+      doc.roundedRect(posX + 2.5, y + 2.5, 14, 5.5, 1, 1, 'F');
+      doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
+      doc.setFontSize(7);
+      doc.text(`Ítem ${item.code}`, posX + 9.5, y + 6.2, { align: 'center' });
+
+      // Title
       doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-      doc.text(`Ítem ${item.code}: ${item.title}`, posX + 3, y + 5, { maxWidth: imgWidth - 6 });
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      const cleanItemTitle = item.title.length > 30 ? item.title.slice(0, 28) + '..' : item.title;
+      doc.text(cleanItemTitle, posX + 18, y + 6.3, { maxWidth: cardWidth - 38 });
 
-      // Image / Video
-      const isVideoFile = item.photo.id.startsWith('vid-') || item.photo.url.startsWith('data:video/') || /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(item.photo.name || '');
+      // Norma badge on right
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(21, 128, 61);
+      doc.text(item.normaSec, posX + cardWidth - 3.5, y + 6.2, { align: 'right' });
 
-      if (isVideoFile) {
-        doc.setFillColor(240, 244, 250);
-        doc.rect(posX + 3, y + 8, imgWidth - 6, imgHeight - 2, 'F');
+      // Photo Container Box Dimensions
+      const boxW = cardWidth - 6; // 81 mm
+      const boxH = 49; // 49 mm
+      const boxX = posX + 3;
+      const boxY = y + 10.5;
+
+      doc.setFillColor(241, 245, 249);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.2);
+      doc.roundedRect(boxX, boxY, boxW, boxH, 1, 1, 'FD');
+
+      if (item.prepared && item.prepared.isVideo) {
+        // Video file display box
+        doc.setFillColor(238, 242, 255);
+        doc.rect(boxX, boxY, boxW, boxH, 'F');
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8.5);
         doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-        doc.text('[REGISTRO DE VIDEO ADJUNTO]', posX + 8, y + 28);
+        doc.text('🎥 [REGISTRO DE VIDEO ADJUNTO]', boxX + boxW / 2, boxY + 18, { align: 'center' });
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.5);
         doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-        doc.text(`Archivo: ${(item.photo.name || 'Video').substring(0, 28)}`, posX + 8, y + 35);
-        doc.text(`Fecha/Hora: ${item.photo.timestamp}`, posX + 8, y + 41);
-      } else {
+        doc.text(`Archivo: ${(item.photo.name || 'Video').substring(0, 30)}`, boxX + boxW / 2, boxY + 26, { align: 'center' });
+        doc.text(`Fecha/Hora: ${item.photo.timestamp || 'Registrado'}`, boxX + boxW / 2, boxY + 33, { align: 'center' });
+      } else if (item.prepared && item.prepared.dataUrl) {
         try {
-          doc.addImage(item.photo.url, 'JPEG', posX + 3, y + 8, imgWidth - 6, imgHeight - 2);
+          const imgAspect = item.prepared.aspectRatio || (item.prepared.width / item.prepared.height) || 1.33;
+          const boxAspect = boxW / boxH;
+
+          let drawW = boxW;
+          let drawH = boxH;
+
+          if (imgAspect > boxAspect) {
+            // Wider image: match width, calculate height
+            drawW = boxW;
+            drawH = boxW / imgAspect;
+          } else {
+            // Taller image: match height, calculate width
+            drawH = boxH;
+            drawW = boxH * imgAspect;
+          }
+
+          // Center the image inside the box
+          const imgX = boxX + (boxW - drawW) / 2;
+          const imgY = boxY + (boxH - drawH) / 2;
+
+          doc.addImage(item.prepared.dataUrl, item.prepared.format, imgX, imgY, drawW, drawH);
+
+          // Subtle border around photo
+          doc.setDrawColor(203, 213, 225);
+          doc.setLineWidth(0.2);
+          doc.rect(imgX, imgY, drawW, drawH, 'D');
         } catch (e) {
-          // Fallback placeholder box
-          doc.setFillColor(230, 230, 230);
-          doc.rect(posX + 3, y + 8, imgWidth - 6, imgHeight - 2, 'F');
-          doc.setFontSize(8);
-          doc.setTextColor(100, 100, 100);
-          doc.text('Archivo adjunto', posX + 20, y + 35);
+          console.warn('Error placing image in PDF:', e);
+          doc.setFillColor(241, 245, 249);
+          doc.rect(boxX, boxY, boxW, boxH, 'F');
+          doc.setFontSize(7.5);
+          doc.setTextColor(120, 120, 120);
+          doc.text('Foto adjunta registrada', boxX + boxW / 2, boxY + 25, { align: 'center' });
         }
+      } else {
+        // Fallback for unavailable image
+        doc.setFillColor(241, 245, 249);
+        doc.rect(boxX, boxY, boxW, boxH, 'F');
+        doc.setFontSize(7.5);
+        doc.setTextColor(120, 120, 120);
+        doc.text('Foto adjunta registrada', boxX + boxW / 2, boxY + 25, { align: 'center' });
       }
 
-      // Footer note
+      // Card Footer: Metadata (Timestamp, Note / Observation)
+      const footerY = y + 61;
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Norma: ${item.normaSec} | ${item.photo.timestamp || ''}`, posX + 3, y + imgHeight + 11, { maxWidth: imgWidth - 6 });
+      doc.setFontSize(6.8);
+      doc.setTextColor(100, 116, 139);
 
-      if (col === itemsPerRow - 1 || i === photoList.length - 1) {
-        y += imgHeight + 22;
+      const timestampStr = item.photo.timestamp ? `📅 ${item.photo.timestamp}` : '📅 Fecha en terreno';
+      doc.text(timestampStr, posX + 3, footerY + 2.5);
+
+      // Note or observation
+      const specificNote = item.photo.note || item.observation || '';
+      if (specificNote) {
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 41, 59);
+        const cleanNote = specificNote.length > 40 ? specificNote.slice(0, 38) + '..' : specificNote;
+        doc.text(`📝 ${cleanNote}`, posX + 3, footerY + 6.5, { maxWidth: cardWidth - 6 });
+      } else {
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100, 116, 139);
+        doc.text(`Norma: ${item.normaSec} • Inspección Fotográfica`, posX + 3, footerY + 6.5, { maxWidth: cardWidth - 6 });
+      }
+
+      // Advance y when row completes or at the last photo
+      if (col === itemsPerRow - 1 || i === preparedPhotos.length - 1) {
+        y += cardHeight + gapY;
       }
     }
   }
