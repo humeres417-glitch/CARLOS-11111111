@@ -6,6 +6,7 @@ import { DriveSyncModal } from './components/DriveSyncModal';
 import { PdfPreviewModal } from './components/PdfPreviewModal';
 import { HistoryModal } from './components/HistoryModal';
 import { AndroidInstallModal } from './components/AndroidInstallModal';
+import { VoltageDropModal } from './components/VoltageDropModal';
 import { INITIAL_TE4_CATEGORIES } from './data/te4NormativeCategories';
 import { Inspection, InstallerInfo, ClientInfo, TechnicalInfo, ItemStatus, PhotoItem, ChecklistCategory } from './types';
 import { TARGET_DRIVE_ACCOUNT } from './utils/googleDrive';
@@ -123,6 +124,7 @@ export default function App() {
   const [isPdfModalOpen, setIsPdfModalOpen] = useState<boolean>(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
   const [isAndroidModalOpen, setIsAndroidModalOpen] = useState<boolean>(false);
+  const [isVoltageDropModalOpen, setIsVoltageDropModalOpen] = useState<boolean>(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isStandalone, setIsStandalone] = useState<boolean>(false);
   const [saveToast, setSaveToast] = useState<boolean>(false);
@@ -405,6 +407,21 @@ export default function App() {
     reader.readAsText(file);
   };
 
+  // Apply voltage drop calculation to inspection notes
+  const handleApplyVoltageDropCalculation = (noteText: string) => {
+    setInspection((prev) => {
+      const existing = prev.generalNotes?.trim() || '';
+      const updatedNotes = existing ? `${existing}\n\n${noteText}` : noteText;
+      return {
+        ...prev,
+        generalNotes: updatedNotes,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+    setSaveToast(true);
+    setTimeout(() => setSaveToast(false), 3000);
+  };
+
   return (
     <div className="min-h-screen bg-[#F7F5F2] text-[#1A1A1A] font-sans pb-16">
       {/* Header Bar */}
@@ -415,6 +432,7 @@ export default function App() {
         onOpenDriveSync={() => setIsDriveModalOpen(true)}
         onOpenHistory={() => setIsHistoryModalOpen(true)}
         onNewInspection={handleNewInspection}
+        onOpenVoltageDrop={() => setIsVoltageDropModalOpen(true)}
         onOpenAndroidInstall={() => setIsAndroidModalOpen(true)}
         completedItemsCount={completedItemsCount}
         totalItemsCount={totalItemsCount}
@@ -459,6 +477,7 @@ export default function App() {
           onChangeClient={handleUpdateClient}
           onChangeTechnical={handleUpdateTechnical}
           onResetForm={handleNewInspection}
+          onOpenVoltageDrop={() => setIsVoltageDropModalOpen(true)}
         />
 
         {/* Checklist Categories & Photo Upload Cards */}
@@ -621,6 +640,13 @@ export default function App() {
         deferredPrompt={deferredPrompt}
         onTriggerInstall={handleTriggerPwaInstall}
         isStandalone={isStandalone}
+      />
+
+      <VoltageDropModal
+        isOpen={isVoltageDropModalOpen}
+        onClose={() => setIsVoltageDropModalOpen(false)}
+        technicalInfo={inspection.technical}
+        onApplyToInspectionNotes={handleApplyVoltageDropCalculation}
       />
     </div>
   );

@@ -60,6 +60,22 @@ export interface StringConfigItem {
   panelBrand?: string;
   panelModel?: string;
   panelWatts?: number;
+  // Module electrical specs (from datasheet)
+  vmpModule?: number;       // Vmp individual del módulo en Volts (ej. 41.9V)
+  impModule?: number;       // Imp individual del módulo en Amperes (ej. 13.12A)
+  vocModule?: number;       // Voc individual del módulo en Volts (ej. 49.8V)
+  iscModule?: number;       // Isc individual del módulo en Amperes (ej. 13.98A)
+  // Cable solar y canalización
+  cableSectionMm2?: number; // Sección cable solar H1Z2Z2-K (ej. 4, 6, 10 mm2)
+  cableDistanceMeters?: number; // Distancia lineal del string al inversor en metros (ej. 25m)
+  operatingTempC?: number;  // Temp de operación (ej. 70°C en techo)
+  // Resultados del cálculo de caída de tensión DC
+  deltaV?: number;          // Caída de tensión en Voltios (V)
+  deltaVPercent?: number;   // Caída de tensión en porcentaje (%)
+  vmpString?: number;       // Tensión nominal total del string Vmp (V)
+  vInverter?: number;       // Tensión en bornes MPPT del inversor (V)
+  powerLossWatts?: number;  // Pérdida de potencia en Watts
+  complianceStatus?: 'OPTIMAL' | 'ACCEPTABLE' | 'WARNING' | 'CRITICAL';
 }
 
 export interface TechnicalInfo {
@@ -82,6 +98,16 @@ export interface TechnicalInfo {
   panelsPerString?: string;
   stringPanelCounts?: number[];
   stringConfigs?: StringConfigItem[];
+  // Parámetros y resultados del alimentador AC (Inversor -> TDFV / Empalme)
+  inverterAcDistanceMeters?: number; // Distancia Inversor -> TDFV en metros (ej. 15m)
+  inverterAcCableSectionMm2?: number; // Sección cable AC en mm2 (ej. 4, 6, 10, 16 mm2)
+  inverterAcSystemType?: 'MONO' | 'TRI'; // Monofásico 220V o Trifásico 380V
+  inverterNominalPowerKw?: number; // Potencia nominal en kW
+  inverterAcDeltaV?: number; // Caída de tensión AC en Voltios
+  inverterAcDeltaVPercent?: number; // Caída de tensión AC en %
+  inverterAcCurrent?: number; // Corriente nominal AC en Amperes
+  inverterAcVoltageAtTerminals?: number; // Tensión en bornes durante inyección (V)
+  inverterAcComplianceStatus?: 'OPTIMAL' | 'ACCEPTABLE' | 'CRITICAL';
 }
 
 export interface Inspection {

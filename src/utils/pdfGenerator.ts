@@ -30,13 +30,35 @@ async function prepareImageForPdf(url: string, id?: string, name?: string): Prom
     };
   }
 
+  // Determine format from data URL or extension
+  let imageFormat: 'JPEG' | 'PNG' = 'JPEG';
+  if (url.startsWith('data:image/png') || /\.(png)$/i.test(name || '')) {
+    imageFormat = 'PNG';
+  }
+
   return new Promise((resolve) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    
+    // Only set crossOrigin for remote HTTP(S) resources to avoid canvas taint errors with data/blob URIs
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      img.crossOrigin = 'anonymous';
+    }
 
     const timeout = setTimeout(() => {
-      resolve(null);
-    }, 6000);
+      // If image is already a data URL, try using it directly even on timeout
+      if (url.startsWith('data:image/')) {
+        resolve({
+          dataUrl: url,
+          format: imageFormat,
+          aspectRatio: 4 / 3,
+          width: 800,
+          height: 600,
+          isVideo: false,
+        });
+      } else {
+        resolve(null);
+      }
+    }, 10000);
 
     img.onload = () => {
       clearTimeout(timeout);
@@ -66,7 +88,7 @@ async function prepareImageForPdf(url: string, id?: string, name?: string): Prom
           ctx.fillStyle = '#FFFFFF';
           ctx.fillRect(0, 0, targetW, targetH);
           ctx.drawImage(img, 0, 0, targetW, targetH);
-          const normalizedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+          const normalizedDataUrl = canvas.toDataURL('image/jpeg', 0.90);
           resolve({
             dataUrl: normalizedDataUrl,
             format: 'JPEG',
@@ -78,7 +100,7 @@ async function prepareImageForPdf(url: string, id?: string, name?: string): Prom
         } else {
           resolve({
             dataUrl: url,
-            format: 'JPEG',
+            format: imageFormat,
             aspectRatio,
             width: naturalW,
             height: naturalH,
@@ -89,7 +111,7 @@ async function prepareImageForPdf(url: string, id?: string, name?: string): Prom
         console.warn('Canvas normalization fallback:', e);
         resolve({
           dataUrl: url,
-          format: 'JPEG',
+          format: imageFormat,
           aspectRatio: (img.naturalWidth || 800) / (img.naturalHeight || 600),
           width: img.naturalWidth || 800,
           height: img.naturalHeight || 600,
@@ -100,8 +122,20 @@ async function prepareImageForPdf(url: string, id?: string, name?: string): Prom
 
     img.onerror = () => {
       clearTimeout(timeout);
-      console.warn('Failed to load image for PDF:', url);
-      resolve(null);
+      console.warn('Failed to load image for PDF:', url ? url.substring(0, 80) : 'empty');
+      // If it's a data URL, we can still attempt to pass it to jsPDF
+      if (url && url.startsWith('data:image/')) {
+        resolve({
+          dataUrl: url,
+          format: imageFormat,
+          aspectRatio: 4 / 3,
+          width: 800,
+          height: 600,
+          isVideo: false,
+        });
+      } else {
+        resolve(null);
+      }
     };
 
     img.src = url;

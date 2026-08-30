@@ -1,8 +1,38 @@
 import React, { useState } from 'react';
-import { User, MapPin, Cpu, ChevronDown, ChevronUp, UserCheck, Phone, ShieldCheck, Loader2, Check, Plus, X, Sun, Battery, Layers, FileSpreadsheet, Save, CheckCircle2 } from 'lucide-react';
+import {
+  User,
+  MapPin,
+  Cpu,
+  ChevronDown,
+  ChevronUp,
+  UserCheck,
+  Phone,
+  ShieldCheck,
+  Loader2,
+  Check,
+  Plus,
+  X,
+  Sun,
+  Battery,
+  Layers,
+  FileSpreadsheet,
+  Save,
+  CheckCircle2,
+  TrendingDown,
+  Zap,
+  ArrowRight,
+  Activity,
+  Sparkles,
+  AlertTriangle,
+  Gauge,
+  Sliders,
+} from 'lucide-react';
 import { InstallerInfo, ClientInfo, TechnicalInfo, SystemType, StringConfigItem } from '../types';
 import { getStoredInstallers, saveStoredInstallers } from '../data/defaultInstallers';
 import { InstallersPlanillaModal } from './InstallersPlanillaModal';
+import { getPvModuleSpecs } from '../data/pvModuleCatalog';
+import { parseInverterSpecs } from '../data/inverterCatalog';
+import { computeStringElectricals, computeAcFeederElectricals } from '../utils/voltageDropHelpers';
 
 const CHILEAN_DISTRIBUTION_COMPANIES = [
   'Enel Distribución Chile',
@@ -36,6 +66,7 @@ interface InstallerFormProps {
   onChangeClient: (data: ClientInfo) => void;
   onChangeTechnical: (data: TechnicalInfo) => void;
   onResetForm?: () => void;
+  onOpenVoltageDrop?: () => void;
 }
 
 export const InstallerForm: React.FC<InstallerFormProps> = ({
@@ -46,6 +77,7 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
   onChangeClient,
   onChangeTechnical,
   onResetForm,
+  onOpenVoltageDrop,
 }) => {
   const [isOpen, setIsOpen] = useState(true);
   const [isFetchingGps, setIsFetchingGps] = useState(false);
@@ -1111,13 +1143,22 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
       const fullStr = model ? `${brand} - ${model}` : brand;
       const watts = existing?.panelWatts || extractPanelWattage(fullStr);
 
-      result.push({
+      const rawItem: StringConfigItem = {
         stringIndex: i + 1,
         panelsCount: pCount,
         panelBrand: brand,
         panelModel: model,
-        panelWatts: watts
-      });
+        panelWatts: watts,
+        cableSectionMm2: existing?.cableSectionMm2 !== undefined ? existing.cableSectionMm2 : 4,
+        cableDistanceMeters: existing?.cableDistanceMeters !== undefined ? existing.cableDistanceMeters : 25,
+        operatingTempC: existing?.operatingTempC !== undefined ? existing.operatingTempC : 70,
+        vmpModule: existing?.vmpModule,
+        impModule: existing?.impModule,
+        vocModule: existing?.vocModule,
+        iscModule: existing?.iscModule,
+      };
+
+      result.push(computeStringElectricals(rawItem));
     }
     return result;
   };
@@ -1126,6 +1167,7 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
   const totalPanelsCalculated = activeStringConfigs.reduce((acc, curr) => acc + (curr.panelsCount || 0), 0);
   const totalPvWattsCalculated = activeStringConfigs.reduce((acc, curr) => acc + ((curr.panelsCount || 0) * (curr.panelWatts || 550)), 0);
   const totalPvKwpCalculated = (totalPvWattsCalculated / 1000).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const acFeederSummary = computeAcFeederElectricals(technical);
 
   const formatPanelsSummaryFromConfigs = (configs: StringConfigItem[]): string => {
     if (!configs || configs.length === 0) return '';
@@ -1157,10 +1199,10 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
   const handleStringPanelCountChange = (idx: number, count: number) => {
     const configs = [...getStringConfigList()];
     if (configs[idx]) {
-      configs[idx] = {
+      configs[idx] = computeStringElectricals({
         ...configs[idx],
         panelsCount: count
-      };
+      });
       const counts = configs.map(c => c.panelsCount);
       const summary = formatPanelsSummaryFromConfigs(configs);
       onChangeTechnical({
@@ -1178,12 +1220,16 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
       const firstModel = pvModelsMap[newBrand]?.[0] || '';
       const fullStr = firstModel ? `${newBrand} - ${firstModel}` : newBrand;
       const watts = extractPanelWattage(fullStr);
-      configs[idx] = {
+      configs[idx] = computeStringElectricals({
         ...configs[idx],
         panelBrand: newBrand,
         panelModel: firstModel,
-        panelWatts: watts
-      };
+        panelWatts: watts,
+        vmpModule: undefined,
+        impModule: undefined,
+        vocModule: undefined,
+        iscModule: undefined,
+      });
       const counts = configs.map(c => c.panelsCount);
       const summary = formatPanelsSummaryFromConfigs(configs);
       onChangeTechnical({
@@ -1201,11 +1247,15 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
       const brand = configs[idx].panelBrand || currentBrand || pvBrandsList[0] || 'Jinko Solar';
       const fullStr = newModel ? `${brand} - ${newModel}` : brand;
       const watts = extractPanelWattage(fullStr);
-      configs[idx] = {
+      configs[idx] = computeStringElectricals({
         ...configs[idx],
         panelModel: newModel,
-        panelWatts: watts
-      };
+        panelWatts: watts,
+        vmpModule: undefined,
+        impModule: undefined,
+        vocModule: undefined,
+        iscModule: undefined,
+      });
       const counts = configs.map(c => c.panelsCount);
       const summary = formatPanelsSummaryFromConfigs(configs);
       onChangeTechnical({
@@ -1217,11 +1267,70 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
     }
   };
 
+  const handleStringCableSectionChange = (idx: number, section: number) => {
+    const configs = [...getStringConfigList()];
+    if (configs[idx]) {
+      configs[idx] = computeStringElectricals({
+        ...configs[idx],
+        cableSectionMm2: section
+      });
+      const summary = formatPanelsSummaryFromConfigs(configs);
+      onChangeTechnical({
+        ...technical,
+        stringConfigs: configs,
+        panelsPerString: summary
+      });
+    }
+  };
+
+  const handleStringCableDistanceChange = (idx: number, distance: number) => {
+    const configs = [...getStringConfigList()];
+    if (configs[idx]) {
+      configs[idx] = computeStringElectricals({
+        ...configs[idx],
+        cableDistanceMeters: Math.max(1, distance)
+      });
+      const summary = formatPanelsSummaryFromConfigs(configs);
+      onChangeTechnical({
+        ...technical,
+        stringConfigs: configs,
+        panelsPerString: summary
+      });
+    }
+  };
+
+  const handleCopyCableAndDistanceToAll = (idx: number) => {
+    const configs = getStringConfigList();
+    const source = configs[idx];
+    if (!source) return;
+    const updated = configs.map(c => computeStringElectricals({
+      ...c,
+      panelBrand: source.panelBrand,
+      panelModel: source.panelModel,
+      panelWatts: source.panelWatts,
+      vmpModule: source.vmpModule,
+      impModule: source.impModule,
+      vocModule: source.vocModule,
+      iscModule: source.iscModule,
+      cableSectionMm2: source.cableSectionMm2,
+      cableDistanceMeters: source.cableDistanceMeters,
+      operatingTempC: source.operatingTempC
+    }));
+    const counts = updated.map(c => c.panelsCount);
+    const summary = formatPanelsSummaryFromConfigs(updated);
+    onChangeTechnical({
+      ...technical,
+      stringConfigs: updated,
+      stringPanelCounts: counts,
+      panelsPerString: summary
+    });
+  };
+
   const handleCopyStringToAll = (idx: number) => {
     const configs = getStringConfigList();
     const source = configs[idx];
     if (!source) return;
-    const updated = configs.map(c => ({
+    const updated = configs.map(c => computeStringElectricals({
       ...c,
       panelBrand: source.panelBrand,
       panelModel: source.panelModel,
@@ -1234,6 +1343,55 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
       stringConfigs: updated,
       stringPanelCounts: counts,
       panelsPerString: summary
+    });
+  };
+
+  const handleInverterDistanceChange = (dist: number) => {
+    const safeDist = Math.max(0, dist);
+    const updated = {
+      ...technical,
+      inverterAcDistanceMeters: safeDist,
+    };
+    const feeder = computeAcFeederElectricals(updated);
+    onChangeTechnical({
+      ...updated,
+      inverterAcDeltaV: feeder.deltaV,
+      inverterAcDeltaVPercent: feeder.deltaVPercent,
+      inverterAcCurrent: feeder.currentAmperes,
+      inverterAcVoltageAtTerminals: feeder.vAtTerminals,
+      inverterAcComplianceStatus: feeder.complianceStatus,
+    });
+  };
+
+  const handleInverterCableSectionChange = (section: number) => {
+    const updated = {
+      ...technical,
+      inverterAcCableSectionMm2: section,
+    };
+    const feeder = computeAcFeederElectricals(updated);
+    onChangeTechnical({
+      ...updated,
+      inverterAcDeltaV: feeder.deltaV,
+      inverterAcDeltaVPercent: feeder.deltaVPercent,
+      inverterAcCurrent: feeder.currentAmperes,
+      inverterAcVoltageAtTerminals: feeder.vAtTerminals,
+      inverterAcComplianceStatus: feeder.complianceStatus,
+    });
+  };
+
+  const handleInverterSystemTypeChange = (type: 'MONO' | 'TRI') => {
+    const updated = {
+      ...technical,
+      inverterAcSystemType: type,
+    };
+    const feeder = computeAcFeederElectricals(updated);
+    onChangeTechnical({
+      ...updated,
+      inverterAcDeltaV: feeder.deltaV,
+      inverterAcDeltaVPercent: feeder.deltaVPercent,
+      inverterAcCurrent: feeder.currentAmperes,
+      inverterAcVoltageAtTerminals: feeder.vAtTerminals,
+      inverterAcComplianceStatus: feeder.complianceStatus,
     });
   };
 
@@ -1544,12 +1702,25 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
 
           {/* Grid 3: Especificaciones Técnicas Solar */}
           <div className="bg-white p-3.5 border-l-4 border-l-[#15803D] border border-[#15803D]/20 space-y-2.5 shadow-2xs">
-            <div className="border-b border-[#15803D]/30 pb-1.5 flex items-baseline justify-between">
+            <div className="border-b border-[#15803D]/30 pb-1.5 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-base font-serif italic text-[#14532D] font-bold flex items-center gap-2">
                 <Cpu className="w-4 h-4 text-[#15803D]" />
                 Especificaciones del Sistema Fotovoltaico
               </h3>
-              <label className="text-[9px] uppercase font-mono tracking-wider text-[#15803D] font-bold">Sección 03</label>
+              <div className="flex items-center gap-2">
+                {onOpenVoltageDrop && (
+                  <button
+                    type="button"
+                    onClick={onOpenVoltageDrop}
+                    className="px-2.5 py-1 bg-[#DCFCE7] hover:bg-[#bbf7d0] text-[#14532D] border border-[#15803D]/40 rounded-2xs font-bold text-[10px] uppercase font-mono flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                    title="Abrir Calculadora de Caída de Tensión para Strings DC y Alimentadores AC"
+                  >
+                    <TrendingDown className="w-3.5 h-3.5 text-[#15803D]" />
+                    <span>Calculadora Caída ΔV</span>
+                  </button>
+                )}
+                <label className="text-[9px] uppercase font-mono tracking-wider text-[#15803D] font-bold">Sección 03</label>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 text-xs">
@@ -1743,13 +1914,26 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                       onChangeTechnical({ ...technical, inverterBrandModel: '' });
                     } else {
                       const firstModel = secInverterModels[newBrand]?.[0] || '';
-                      onChangeTechnical({
+                      const fullStr = firstModel ? `${newBrand} - ${firstModel}` : newBrand;
+                      const invSpecs = parseInverterSpecs(fullStr);
+                      const updated = {
                         ...technical,
-                        inverterBrandModel: firstModel ? `${newBrand} - ${firstModel}` : newBrand
+                        inverterBrandModel: fullStr,
+                        inverterNominalPowerKw: invSpecs.nominalPowerKw,
+                        inverterAcSystemType: invSpecs.systemType,
+                      };
+                      const feeder = computeAcFeederElectricals(updated);
+                      onChangeTechnical({
+                        ...updated,
+                        inverterAcDeltaV: feeder.deltaV,
+                        inverterAcDeltaVPercent: feeder.deltaVPercent,
+                        inverterAcCurrent: feeder.currentAmperes,
+                        inverterAcVoltageAtTerminals: feeder.vAtTerminals,
+                        inverterAcComplianceStatus: feeder.complianceStatus,
                       });
                     }
                   }}
-                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer"
+                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer font-medium"
                 >
                   <option value="">Seleccione Marca Inversor (Certificado / Off-Grid)...</option>
                   {secCertifiedInverterBrands.map((brand) => (
@@ -1769,12 +1953,25 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                   onChange={(e) => {
                     const newModel = e.target.value;
                     const brandPrefix = currentInverterBrand || '';
-                    onChangeTechnical({
+                    const fullStr = newModel ? `${brandPrefix} - ${newModel}` : brandPrefix;
+                    const invSpecs = parseInverterSpecs(fullStr);
+                    const updated = {
                       ...technical,
-                      inverterBrandModel: newModel ? `${brandPrefix} - ${newModel}` : brandPrefix
+                      inverterBrandModel: fullStr,
+                      inverterNominalPowerKw: invSpecs.nominalPowerKw,
+                      inverterAcSystemType: invSpecs.systemType,
+                    };
+                    const feeder = computeAcFeederElectricals(updated);
+                    onChangeTechnical({
+                      ...updated,
+                      inverterAcDeltaV: feeder.deltaV,
+                      inverterAcDeltaVPercent: feeder.deltaVPercent,
+                      inverterAcCurrent: feeder.currentAmperes,
+                      inverterAcVoltageAtTerminals: feeder.vAtTerminals,
+                      inverterAcComplianceStatus: feeder.complianceStatus,
                     });
                   }}
-                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                 >
                   <option value="">
                     {currentInverterBrand ? 'Seleccione Modelo...' : 'Primero seleccione marca...'}
@@ -1783,6 +1980,188 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                     <option key={model} value={model}>{model}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Alimentador AC Inversor -> TDFV / Empalme */}
+              <div className="sm:col-span-2 md:col-span-4 bg-[#F0FDF4] p-3 border border-[#15803D]/40 rounded-xs space-y-2.5 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#15803D]/25 pb-2 gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1 rounded-2xs bg-[#15803D] text-white">
+                      <Zap className="w-3.5 h-3.5" />
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-bold text-[#14532D] flex items-center gap-1.5">
+                        Alimentador AC: Inversor ➔ Tablero Distribución (TDFV / Empalme)
+                        <span className="text-[9px] font-mono bg-white text-[#15803D] px-1.5 py-0.2 border border-[#15803D]/30 rounded-2xs font-bold">
+                          RIC N°03 & RIC N°19
+                        </span>
+                      </h4>
+                      <p className="text-[10px] text-[#15803D]/80">
+                        Cálculo automático de caída de tensión en el alimentador de corriente alterna
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {onOpenVoltageDrop && (
+                      <button
+                        type="button"
+                        onClick={onOpenVoltageDrop}
+                        className="text-[9.5px] font-bold text-[#15803D] hover:text-[#14532D] bg-white hover:bg-emerald-50 px-2 py-1 border border-[#15803D]/40 rounded-2xs flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                        title="Abrir la calculadora completa de caída de tensión"
+                      >
+                        <TrendingDown className="w-3.5 h-3.5 text-[#15803D]" />
+                        <span>Calculadora Avanzada</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 text-xs">
+                  {/* Distancia Inversor -> TDFV */}
+                  <div>
+                    <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-75 mb-0.5">
+                      Distancia al TDFV (metros) *
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        id="input-inverter-ac-distance"
+                        type="number"
+                        min="1"
+                        max="300"
+                        step="1"
+                        value={technical.inverterAcDistanceMeters !== undefined ? technical.inverterAcDistanceMeters : 15}
+                        onChange={(e) => handleInverterDistanceChange(parseFloat(e.target.value) || 0)}
+                        placeholder="Ej. 15"
+                        className="w-full px-2 py-1 bg-white border border-[#15803D]/40 text-xs font-bold text-[#0F172A] focus:outline-none focus:border-[#15803D]"
+                      />
+                      <span className="text-[10px] font-mono font-bold text-[#15803D]">m</span>
+                    </div>
+                    {/* Quick Distance Presets */}
+                    <div className="flex items-center gap-1 mt-1">
+                      {[5, 10, 15, 25, 40].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => handleInverterDistanceChange(preset)}
+                          className={`text-[8.5px] font-mono px-1.5 py-0.5 rounded-2xs border cursor-pointer transition-colors ${
+                            (technical.inverterAcDistanceMeters !== undefined ? technical.inverterAcDistanceMeters : 15) === preset
+                              ? 'bg-[#15803D] text-white border-[#15803D] font-bold'
+                              : 'bg-white text-[#14532D] border-[#15803D]/30 hover:bg-emerald-100'
+                          }`}
+                        >
+                          {preset}m
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Sección Conductor AC */}
+                  <div>
+                    <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-75 mb-0.5">
+                      Sección Conductor AC (mm²) *
+                    </label>
+                    <select
+                      id="select-inverter-ac-section"
+                      value={technical.inverterAcCableSectionMm2 !== undefined ? technical.inverterAcCableSectionMm2 : 6}
+                      onChange={(e) => handleInverterCableSectionChange(parseFloat(e.target.value) || 6)}
+                      className="w-full px-2 py-1 bg-white border border-[#15803D]/40 text-xs font-bold text-[#0F172A] focus:outline-none focus:border-[#15803D] cursor-pointer"
+                    >
+                      <option value={2.5}>2.5 mm² (Hasta 16A)</option>
+                      <option value={4}>4.0 mm² (Hasta 25A)</option>
+                      <option value={6}>6.0 mm² (Hasta 32A - Típico)</option>
+                      <option value={10}>10.0 mm² (Hasta 50A)</option>
+                      <option value={16}>16.0 mm² (Hasta 70A)</option>
+                      <option value={25}>25.0 mm² (Hasta 95A)</option>
+                      <option value={35}>35.0 mm² (Hasta 120A)</option>
+                    </select>
+                    {/* Quick Section Chips */}
+                    <div className="flex items-center gap-1 mt-1">
+                      {[2.5, 4, 6, 10, 16].map((sec) => (
+                        <button
+                          key={sec}
+                          type="button"
+                          onClick={() => handleInverterCableSectionChange(sec)}
+                          className={`text-[8.5px] font-mono px-1 py-0.5 rounded-2xs border cursor-pointer transition-colors ${
+                            (technical.inverterAcCableSectionMm2 !== undefined ? technical.inverterAcCableSectionMm2 : 6) === sec
+                              ? 'bg-[#15803D] text-white border-[#15803D] font-bold'
+                              : 'bg-white text-[#14532D] border-[#15803D]/30 hover:bg-emerald-100'
+                          }`}
+                        >
+                          {sec}mm²
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Red Eléctrica / Fases */}
+                  <div>
+                    <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-75 mb-0.5">
+                      Sistema Eléctrico AC
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleInverterSystemTypeChange('MONO')}
+                        className={`flex-1 py-1 px-1.5 text-[10px] font-mono font-bold border rounded-2xs cursor-pointer transition-colors ${
+                          acFeederSummary.systemType === 'MONO'
+                            ? 'bg-[#15803D] text-white border-[#15803D]'
+                            : 'bg-white text-[#14532D] border-[#15803D]/30 hover:bg-emerald-50'
+                        }`}
+                      >
+                        1Φ 220V (Monofásico)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleInverterSystemTypeChange('TRI')}
+                        className={`flex-1 py-1 px-1.5 text-[10px] font-mono font-bold border rounded-2xs cursor-pointer transition-colors ${
+                          acFeederSummary.systemType === 'TRI'
+                            ? 'bg-[#15803D] text-white border-[#15803D]'
+                            : 'bg-white text-[#14532D] border-[#15803D]/30 hover:bg-emerald-50'
+                        }`}
+                      >
+                        3Φ 380V (Trifásico)
+                      </button>
+                    </div>
+                    <div className="text-[9px] text-[#15803D] mt-1 font-mono font-medium">
+                      Potencia: {acFeederSummary.nominalPowerKw.toFixed(1)} kW • I_ac: {acFeederSummary.currentAmperes} A
+                    </div>
+                  </div>
+
+                  {/* Resultados Caída de Tensión AC */}
+                  <div className="bg-white p-2 border border-[#15803D]/30 rounded-2xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[#14532D]">
+                        Caída Tensión AC (ΔV)
+                      </span>
+                      <span
+                        className={`text-[8.5px] font-mono font-bold px-1.5 py-0.2 rounded-2xs border ${
+                          acFeederSummary.complianceStatus === 'OPTIMAL'
+                            ? 'bg-[#DCFCE7] text-[#14532D] border-[#15803D]/40'
+                            : acFeederSummary.complianceStatus === 'ACCEPTABLE'
+                            ? 'bg-amber-50 text-amber-800 border-amber-300'
+                            : 'bg-rose-50 text-rose-800 border-rose-300'
+                        }`}
+                      >
+                        {acFeederSummary.complianceStatus === 'OPTIMAL' ? '✓ Óptimo (≤1.5%)' : acFeederSummary.complianceStatus === 'ACCEPTABLE' ? '✓ Conforme (≤3.0%)' : '⚠ Excesivo (>3.0%)'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1 text-[10px] font-mono pt-0.5">
+                      <div>
+                        <span className="text-gray-500 block text-[8px] uppercase">ΔV Caída:</span>
+                        <span className="font-bold text-[#0F172A]">{acFeederSummary.deltaV} V ({acFeederSummary.deltaVPercent}%)</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block text-[8px] uppercase">V Inversor:</span>
+                        <span className="font-bold text-[#0F172A]">{acFeederSummary.vAtTerminals} V</span>
+                      </div>
+                    </div>
+                    <div className="text-[8.5px] text-[#15803D] font-mono">
+                      Pérdida Joule: {acFeederSummary.powerLossWatts} W en {acFeederSummary.distanceMeters}m
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Battery selection fields - Hidden when system is On-Grid (Netbilling) */}
@@ -2055,9 +2434,9 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                       const modelsForString = strConfig.panelBrand ? (pvModelsMap[strConfig.panelBrand] || []) : [];
 
                       return (
-                        <div key={stringNum} className="flex flex-col bg-white p-2.5 border border-[#15803D]/30 shadow-2xs space-y-2 rounded-xs">
+                        <div key={stringNum} className="flex flex-col bg-white p-3 border border-[#15803D]/35 shadow-2xs space-y-2.5 rounded-xs">
                           <div className="flex items-center justify-between border-b border-[#15803D]/15 pb-1.5 gap-1">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[11px] font-bold text-[#14532D] bg-[#DCFCE7] px-2 py-0.5 border border-[#15803D]/40 rounded-2xs flex items-center gap-1">
                                 <Sun className="w-3 h-3 text-[#15803D]" />
                                 String #{stringNum}
@@ -2073,81 +2452,197 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                                 type="button"
                                 onClick={() => handleCopyStringToAll(idx)}
                                 className="text-[9px] font-semibold text-[#15803D] hover:text-[#14532D] hover:bg-emerald-100 px-1.5 py-0.5 border border-[#15803D]/30 rounded-2xs transition-colors cursor-pointer"
-                                title="Copiar marca y modelo de este string a todos los demás strings"
+                                title="Copiar marca, modelo, cable y distancia de este string a todos los demás strings"
                               >
                                 Copiar a todos
                               </button>
                             )}
                           </div>
 
-                          <div className="space-y-1.5">
-                            {/* Cantidad de paneles */}
-                            <div>
-                              <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
-                                Cantidad de Paneles *
-                              </label>
-                              <select
-                                id={`select-string-${stringNum}-panels`}
-                                value={strConfig.panelsCount}
-                                onChange={(e) => handleStringPanelCountChange(idx, parseInt(e.target.value, 10) || 0)}
-                                className="w-full px-2 py-1 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer"
-                              >
-                                <option value={0}>0 (Inactivo / Desconectado)</option>
-                                {Array.from({ length: 45 }).map((_, pIndex) => {
-                                  const pVal = pIndex + 1;
-                                  return (
-                                    <option key={pVal} value={pVal}>
-                                      {pVal} {pVal === 1 ? 'panel' : 'paneles'} ({pVal * (strConfig.panelWatts || 550)}W)
-                                    </option>
-                                  );
-                                })}
-                              </select>
-                            </div>
-
-                            {/* Marca de Panel */}
-                            <div>
-                              <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
-                                Marca del Panel (String #{stringNum}) *
-                              </label>
-                              <select
-                                id={`select-string-${stringNum}-brand`}
-                                value={strConfig.panelBrand || ''}
-                                onChange={(e) => handleStringBrandChange(idx, e.target.value)}
-                                className="w-full px-2 py-1 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer"
-                              >
-                                <option value="">Seleccione marca para String #{stringNum}...</option>
-                                {pvBrandsList.map((brand) => (
-                                  <option key={brand} value={brand}>{brand}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            {/* Modelo de Panel */}
-                            <div>
-                              <div className="flex items-center justify-between mb-0.5">
-                                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70">
-                                  Modelo del Panel (String #{stringNum}) *
+                          <div className="space-y-2">
+                            {/* Panel Count, Brand, and Model */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                              {/* Cantidad de paneles */}
+                              <div>
+                                <label className="block text-[8.5px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                                  N° Paneles *
                                 </label>
-                                {strConfig.panelWatts && (
-                                  <span className="text-[8.5px] font-bold text-[#15803D] bg-[#DCFCE7] px-1 py-0.2 rounded-2xs">
-                                    {strConfig.panelWatts}W
-                                  </span>
-                                )}
+                                <select
+                                  id={`select-string-${stringNum}-panels`}
+                                  value={strConfig.panelsCount}
+                                  onChange={(e) => handleStringPanelCountChange(idx, parseInt(e.target.value, 10) || 0)}
+                                  className="w-full px-1.5 py-1 bg-[#F8FAF9] border border-[#15803D]/30 text-xs font-bold text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer"
+                                >
+                                  <option value={0}>0 (Inactivo)</option>
+                                  {Array.from({ length: 45 }).map((_, pIndex) => {
+                                    const pVal = pIndex + 1;
+                                    return (
+                                      <option key={pVal} value={pVal}>
+                                        {pVal} {pVal === 1 ? 'panel' : 'paneles'} ({pVal * (strConfig.panelWatts || 550)}W)
+                                      </option>
+                                    );
+                                  })}
+                                </select>
                               </div>
-                              <select
-                                id={`select-string-${stringNum}-model`}
-                                value={strConfig.panelModel || ''}
-                                disabled={!strConfig.panelBrand}
-                                onChange={(e) => handleStringModelChange(idx, e.target.value)}
-                                className="w-full px-2 py-1 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                <option value="">
-                                  {strConfig.panelBrand ? 'Seleccione modelo...' : 'Primero seleccione marca...'}
-                                </option>
-                                {modelsForString.map((model) => (
-                                  <option key={model} value={model}>{model}</option>
-                                ))}
-                              </select>
+
+                              {/* Marca de Panel */}
+                              <div>
+                                <label className="block text-[8.5px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                                  Marca Panel *
+                                </label>
+                                <select
+                                  id={`select-string-${stringNum}-brand`}
+                                  value={strConfig.panelBrand || ''}
+                                  onChange={(e) => handleStringBrandChange(idx, e.target.value)}
+                                  className="w-full px-1.5 py-1 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer"
+                                >
+                                  <option value="">Seleccione marca...</option>
+                                  {pvBrandsList.map((brand) => (
+                                    <option key={brand} value={brand}>{brand}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Modelo de Panel */}
+                              <div>
+                                <label className="block text-[8.5px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                                  Modelo Panel *
+                                </label>
+                                <select
+                                  id={`select-string-${stringNum}-model`}
+                                  value={strConfig.panelModel || ''}
+                                  disabled={!strConfig.panelBrand}
+                                  onChange={(e) => handleStringModelChange(idx, e.target.value)}
+                                  className="w-full px-1.5 py-1 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <option value="">
+                                    {strConfig.panelBrand ? 'Modelo...' : 'Primero marca...'}
+                                  </option>
+                                  {modelsForString.map((model) => (
+                                    <option key={model} value={model}>{model}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* Ficha Eléctrica del Módulo (STC) */}
+                            {strConfig.vmpModule && strConfig.impModule && (
+                              <div className="bg-[#F8FAF9] p-1.5 border border-slate-200 rounded-2xs text-[9.5px] font-mono flex items-center justify-between text-slate-700">
+                                <span><strong className="text-[#14532D]">Vmp:</strong> {strConfig.vmpModule}V</span>
+                                <span><strong className="text-[#14532D]">Imp:</strong> {strConfig.impModule}A</span>
+                                <span><strong className="text-[#14532D]">Voc:</strong> {strConfig.vocModule}V</span>
+                                <span><strong className="text-[#14532D]">Isc:</strong> {strConfig.iscModule}A</span>
+                              </div>
+                            )}
+
+                            {/* Cable Solar & Distancia DC */}
+                            <div className="bg-emerald-50/50 p-2 border border-[#15803D]/25 rounded-2xs space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#14532D] flex items-center gap-1">
+                                  <Zap className="w-3 h-3 text-[#15803D]" />
+                                  Cable Solar & Distancia DC
+                                </span>
+                                <span className="text-[8.5px] font-mono text-[#15803D]">
+                                  {strConfig.cableSectionMm2 || 4} mm² • {strConfig.cableDistanceMeters || 20}m
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                {/* Sección de Cable Solar */}
+                                <div>
+                                  <label className="block text-[8px] uppercase tracking-wider font-semibold opacity-75 mb-0.5">
+                                    Sección Cable Solar
+                                  </label>
+                                  <div className="flex items-center gap-1">
+                                    {[4, 6, 10].map((sec) => (
+                                      <button
+                                        key={sec}
+                                        type="button"
+                                        onClick={() => handleStringCableSectionChange(idx, sec)}
+                                        className={`flex-1 py-0.5 px-1 text-[9px] font-mono font-bold rounded-2xs border cursor-pointer transition-colors ${
+                                          (strConfig.cableSectionMm2 || 4) === sec
+                                            ? 'bg-[#15803D] text-white border-[#15803D]'
+                                            : 'bg-white text-[#14532D] border-[#15803D]/30 hover:bg-emerald-100'
+                                        }`}
+                                      >
+                                        {sec} mm²
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Distancia del String al Inversor */}
+                                <div>
+                                  <label className="block text-[8px] uppercase tracking-wider font-semibold opacity-75 mb-0.5">
+                                    Distancia al Inversor (m)
+                                  </label>
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      id={`input-string-${stringNum}-distance`}
+                                      type="number"
+                                      min="1"
+                                      max="300"
+                                      step="1"
+                                      value={strConfig.cableDistanceMeters !== undefined ? strConfig.cableDistanceMeters : 20}
+                                      onChange={(e) => handleStringCableDistanceChange(idx, parseFloat(e.target.value) || 0)}
+                                      className="w-full px-1.5 py-0.5 bg-white border border-[#15803D]/30 text-xs font-mono font-bold text-[#0F172A] focus:outline-none focus:border-[#15803D]"
+                                    />
+                                    <div className="flex items-center gap-0.5">
+                                      {[15, 25, 40].map((dist) => (
+                                        <button
+                                          key={dist}
+                                          type="button"
+                                          onClick={() => handleStringCableDistanceChange(idx, dist)}
+                                          className={`px-1 py-0.5 text-[8px] font-mono rounded-2xs border cursor-pointer transition-colors ${
+                                            (strConfig.cableDistanceMeters || 20) === dist
+                                              ? 'bg-[#15803D] text-white border-[#15803D] font-bold'
+                                              : 'bg-white text-[#14532D] border-[#15803D]/30 hover:bg-emerald-100'
+                                          }`}
+                                        >
+                                          {dist}m
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Resultados de Caída de Tensión DC en Vivo */}
+                              {strConfig.panelsCount > 0 && (
+                                <div className="bg-white p-1.5 border border-[#15803D]/30 rounded-2xs mt-1 space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[8.5px] font-bold uppercase tracking-wider text-[#14532D]">
+                                      Caída de Tensión DC (ΔV)
+                                    </span>
+                                    <span
+                                      className={`text-[8px] font-mono font-bold px-1.5 py-0.2 rounded-2xs border ${
+                                        strConfig.complianceStatus === 'OPTIMAL'
+                                          ? 'bg-[#DCFCE7] text-[#14532D] border-[#15803D]/40'
+                                          : strConfig.complianceStatus === 'ACCEPTABLE'
+                                          ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                          : 'bg-rose-50 text-rose-800 border-rose-300'
+                                      }`}
+                                    >
+                                      {strConfig.complianceStatus === 'OPTIMAL' ? '✓ Óptimo (≤1.5%)' : strConfig.complianceStatus === 'ACCEPTABLE' ? '✓ Conforme (≤3.0%)' : '⚠ Excesivo (>3.0%)'}
+                                    </span>
+                                  </div>
+
+                                  <div className="grid grid-cols-3 gap-1 text-[9.5px] font-mono">
+                                    <div>
+                                      <span className="text-gray-500 block text-[7.5px] uppercase">Vmp String:</span>
+                                      <span className="font-bold text-[#0F172A]">{strConfig.vmpString || 0} V</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500 block text-[7.5px] uppercase">ΔV Caída:</span>
+                                      <span className="font-bold text-[#0F172A]">{strConfig.deltaV || 0} V ({strConfig.deltaVPercent || 0}%)</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500 block text-[7.5px] uppercase">V Inversor:</span>
+                                      <span className="font-bold text-[#0F172A]">{strConfig.vInverter || 0} V</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>

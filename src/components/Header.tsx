@@ -1,5 +1,5 @@
 import React from 'react';
-import { HardDrive, FileText, RotateCcw, History } from 'lucide-react';
+import { HardDrive, FileText, RotateCcw, History, TrendingDown, Zap } from 'lucide-react';
 
 interface HeaderProps {
   driveConnected: boolean;
@@ -8,6 +8,7 @@ interface HeaderProps {
   onOpenDriveSync: () => void;
   onOpenHistory: () => void;
   onNewInspection: () => void;
+  onOpenVoltageDrop?: () => void;
   onOpenAndroidInstall?: () => void;
   completedItemsCount: number;
   totalItemsCount: number;
@@ -21,6 +22,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenDriveSync,
   onOpenHistory,
   onNewInspection,
+  onOpenVoltageDrop,
   onOpenAndroidInstall,
   completedItemsCount,
   totalItemsCount,
@@ -56,6 +58,19 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          {/* Voltage Drop Calculator Button */}
+          {onOpenVoltageDrop && (
+            <button
+              id="btn-header-voltage-drop"
+              onClick={onOpenVoltageDrop}
+              className="px-3.5 py-1.5 rounded-full border border-emerald-600/40 bg-[#DCFCE7] text-[#14532D] hover:bg-[#bbf7d0] text-[11px] uppercase tracking-wider font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              title="Calculadora de Caída de Tensión para Strings DC y Alimentadores AC (RIC N°03 y RIC N°19)"
+            >
+              <TrendingDown className="w-3.5 h-3.5 text-[#15803D]" />
+              <span>Calculadora ΔV</span>
+            </button>
+          )}
+
           {/* New / Reset Inspection Button */}
           <button
             id="btn-header-new-inspection"
