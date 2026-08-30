@@ -16,8 +16,11 @@ import {
   ChevronUp,
   AlertCircle,
   Download,
-  ShieldAlert,
-  Globe,
+  Mail,
+  Send,
+  Sparkles,
+  ShieldCheck,
+  Folder,
 } from 'lucide-react';
 import { Inspection, UploadProgress } from '../types';
 import {
@@ -58,24 +61,19 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
   const [hasToken, setHasToken] = useState<boolean>(!!getAccessToken());
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isDomainError, setIsDomainError] = useState(false);
+  const [uploadSuccessUrl, setUploadSuccessUrl] = useState<string | null>(null);
   const [showManualToken, setShowManualToken] = useState(false);
   const [manualTokenInput, setManualTokenInput] = useState('');
-  const [copiedDomain, setCopiedDomain] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
-  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
-  const isCustomDomain =
-    currentHostname &&
-    currentHostname !== 'localhost' &&
-    currentHostname !== '127.0.0.1' &&
-    !currentHostname.includes('firebaseapp.com') &&
-    !currentHostname.includes('web.app');
+  const { formattedName, clientName, address, date } = buildInspectionBaseFileName(inspection);
 
   useEffect(() => {
     if (isOpen) {
       const activeTok = getAccessToken();
       setHasToken(!!activeTok);
       setUser(getCurrentUser());
+      setErrorMessage(null);
 
       const unsubscribe = initAuth(
         (u, token) => {
@@ -104,23 +102,16 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
 
   const handleGoogleLogin = async () => {
     setErrorMessage(null);
-    setIsDomainError(false);
     setIsAuthenticating(true);
     try {
       const result = await googleSignIn();
       setUser(result.user);
       setHasToken(true);
     } catch (err: any) {
-      console.error('Login error:', err);
-      const msg = err?.message || 'Error al conectar con Google.';
-      setErrorMessage(msg);
-      if (
-        err?.code === 'auth/unauthorized-domain' ||
-        msg.includes('unauthorized-domain') ||
-        msg.includes('Dominio temporal no autorizado')
-      ) {
-        setIsDomainError(true);
-      }
+      console.warn('Login note:', err);
+      setErrorMessage(
+        err?.message || 'Para conectar tu cuenta personal, puedes usar las Opciones Avanzadas o subir directamente con el botón verde sin necesidad de iniciar sesión.'
+      );
     } finally {
       setIsAuthenticating(false);
     }
@@ -131,7 +122,6 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
     setUser(null);
     setHasToken(false);
     setErrorMessage(null);
-    setIsDomainError(false);
   };
 
   const handleApplyManualToken = () => {
@@ -140,48 +130,30 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
     setHasToken(true);
     setUser({ displayName: 'Técnico Servilec', email: TARGET_DRIVE_ACCOUNT });
     setErrorMessage(null);
-    setIsDomainError(false);
     setShowManualToken(false);
     setManualTokenInput('');
   };
 
-  const handleCopyDomain = () => {
-    if (!currentHostname) return;
-    navigator.clipboard.writeText(currentHostname);
-    setCopiedDomain(true);
-    setTimeout(() => setCopiedDomain(false), 3000);
-  };
-
   const handleStartDriveUpload = async () => {
     setErrorMessage(null);
-    setIsDomainError(false);
     setIsUploading(true);
+    setUploadSuccessUrl(null);
 
     try {
-      const currentToken = getAccessToken() || undefined;
-
-      // If on a custom domain without token, check if we need to authenticate
-      if (!currentToken && !isDomainError) {
-        try {
-          const authRes = await googleSignIn();
-          setUser(authRes.user);
-          setHasToken(true);
-        } catch (e: any) {
-          console.warn('Auto-auth attempt warning:', e);
-          if (
-            e?.code === 'auth/unauthorized-domain' ||
-            e?.message?.includes('unauthorized-domain') ||
-            e?.message?.includes('Dominio')
-          ) {
-            setIsDomainError(true);
-          }
-        }
+      // 1. Generate PDF Report Blob
+      if (progress === null) {
+        setProgress({
+          currentStep: 'Generando Reporte Técnico SEC en PDF...',
+          totalFiles: totalPhotosCount + 1,
+          completedFiles: 0,
+          currentFileName: `${formattedName}.pdf`,
+          isComplete: false,
+        });
       }
 
-      // 1. Generate PDF Report Blob
       const pdfBlob = await generateTE4PdfReport(inspection);
 
-      // 2. Upload Report and Photos directly to Google Drive
+      // 2. Upload Report and Photos directly to Google Drive (agile flow)
       const { folderId, folderUrl } = await uploadFullInspectionToDrive(
         inspection,
         pdfBlob,
@@ -191,18 +163,12 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
         }
       );
 
+      setUploadSuccessUrl(folderUrl);
       onInspectionUploaded(folderId, folderUrl);
     } catch (err: any) {
       console.error('Error en carga a Google Drive:', err);
       const msg = err.message || 'Error durante la carga a Google Drive.';
       setErrorMessage(msg);
-      if (
-        err?.code === 'auth/unauthorized-domain' ||
-        msg.includes('unauthorized-domain') ||
-        msg.includes('Dominio')
-      ) {
-        setIsDomainError(true);
-      }
     } finally {
       setIsUploading(false);
       setIsAuthenticating(false);
@@ -227,7 +193,22 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
     }
   };
 
-  const firebaseAuthSettingsUrl = `https://console.firebase.google.com/project/gen-lang-client-0269277436/authentication/settings`;
+  const handleSendByEmail = () => {
+    const subject = encodeURIComponent(`[INSPECCIÓN TE4 SEC] ${clientName} - ${address} (${date})`);
+    const body = encodeURIComponent(
+      `Estimado equipo Servilec,\n\nSe ha completado la inspección técnica fotovoltaica SEC para el proyecto:\n\n` +
+      `• Cliente: ${clientName}\n` +
+      `• Dirección / Comuna: ${address}\n` +
+      `• Fecha de Inspección: ${date}\n` +
+      `• Potencia: ${inspection.technical?.installedPower || 'N/A'} kWp\n` +
+      `• Total de Fotos de Evidencia: ${totalPhotosCount}\n` +
+      `• Carpeta en Drive: INSTALACIONES SERVILEC / ${formattedName}\n\n` +
+      `Saludos cordiales,\nInspector Técnico Servilec`
+    );
+    window.location.href = `mailto:${TARGET_DRIVE_ACCOUNT}?subject=${subject}&body=${body}`;
+  };
+
+  const driveTargetFolderUrl = uploadSuccessUrl || `https://drive.google.com/drive/u/0/my-drive`;
 
   return (
     <div className="fixed inset-0 z-50 bg-[#1A1A1A]/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
@@ -240,7 +221,7 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-serif italic text-white font-bold leading-tight">
-                Google Drive — Respaldo de Inspección
+                Google Drive — Envío Ágil de Inspección
               </h3>
               <p className="text-[10px] uppercase font-mono tracking-widest text-emerald-100/90">
                 SERVILEC ENERGÍA • {TARGET_DRIVE_ACCOUNT}
@@ -257,14 +238,15 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
         </div>
 
         <div className="p-5 space-y-4 text-xs text-[#1A1A1A] overflow-y-auto">
-          {/* Account Status / Auth Box */}
+          {/* Target Account Badge & Direct Status */}
           <div className="bg-[#F0FDF4] p-3.5 border border-[#15803D]/40 space-y-2.5 rounded-xs">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <span className="text-[10px] uppercase font-mono tracking-widest text-[#14532D] font-bold block">
                   Cuenta Destino Google Drive:
                 </span>
-                <strong className="text-sm font-mono text-[#15803D] block">
+                <strong className="text-sm font-mono text-[#15803D] flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-[#15803D]" />
                   {TARGET_DRIVE_ACCOUNT}
                 </strong>
               </div>
@@ -278,8 +260,8 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
                   <button
                     onClick={handleGoogleLogin}
                     disabled={isAuthenticating || isUploading || isDownloadingZip}
-                    className="px-3.5 py-1.5 bg-[#15803D] text-white text-[10px] font-mono font-bold hover:bg-[#16A34A] flex items-center gap-1.5 rounded-xs transition-colors cursor-pointer shadow-xs"
-                    title="Conectar cuenta de Google con permisos de Drive"
+                    className="px-3.5 py-1.5 bg-[#15803D]/15 text-[#14532D] border border-[#15803D]/40 text-[10px] font-mono font-bold hover:bg-[#15803D]/25 flex items-center gap-1.5 rounded-xs transition-colors cursor-pointer"
+                    title="Conectar cuenta Google opcionalmente"
                   >
                     {isAuthenticating ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -305,80 +287,103 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
             )}
           </div>
 
-          {/* Domain Authorization Helper (Shown on Custom Domains or when error occurs) */}
-          {(isDomainError || isCustomDomain) && !hasToken && (
-            <div className="bg-amber-50/90 border border-amber-300 p-3.5 rounded-xs space-y-2.5">
-              <div className="flex items-center gap-2 text-amber-950 font-bold text-xs">
-                <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>Autorizar Dominio en Firebase Console:</span>
+          {/* Target Folder Naming Preview */}
+          <div className="bg-[#F7F5F2] p-3.5 border border-[#1A1A1A] space-y-2 rounded-xs">
+            <h4 className="font-serif italic text-sm text-[#1A1A1A] flex items-center gap-1.5 font-bold">
+              <Folder className="w-4 h-4 text-[#15803D]" />
+              Estructura de Carpeta en Google Drive:
+            </h4>
+            <div className="grid grid-cols-2 gap-2 text-[#1A1A1A] font-sans">
+              <div className="flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-[#15803D]" />
+                <span>1 Reporte PDF Técnico SEC</span>
               </div>
-              <p className="text-[11px] text-amber-900 leading-relaxed font-sans">
-                Para que Google permita iniciar sesión desde este dominio (<strong>{currentHostname}</strong>), solo debes agregarlo una vez a la lista de dominios autorizados de Firebase:
+              <div className="flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5 text-[#15803D]" />
+                <span>{totalPhotosCount} Fotos de Evidencia</span>
+              </div>
+            </div>
+            <div className="text-[11px] font-mono pt-2 border-t border-[#1A1A1A]/20 bg-white p-2 rounded-xs border">
+              <span className="text-slate-500 block text-[9.5px] uppercase">Ruta organizada:</span>
+              <strong className="text-emerald-950 block break-all">
+                INSTALACIONES SERVILEC / {formattedName}
+              </strong>
+            </div>
+          </div>
+
+          {/* Upload Progress Display */}
+          {progress && (
+            <div className="bg-[#F0FDF4] border border-[#15803D] p-3.5 space-y-2 rounded-xs">
+              <div className="flex justify-between items-center text-[#14532D] font-mono text-[11px] font-bold">
+                <span>{progress.currentStep}</span>
+                <span>
+                  {progress.completedFiles}/{progress.totalFiles}
+                </span>
+              </div>
+
+              <div className="w-full bg-white border border-[#15803D]/40 h-3 overflow-hidden rounded-2xs">
+                <div
+                  className="bg-[#15803D] h-full transition-all duration-300"
+                  style={{
+                    width: `${Math.round((progress.completedFiles / (progress.totalFiles || 1)) * 100)}%`,
+                  }}
+                />
+              </div>
+
+              <p className="text-[10px] font-mono text-emerald-900 truncate">
+                {progress.currentFileName}
               </p>
 
-              <div className="bg-white p-2 border border-amber-200 rounded-xs flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 truncate">
-                  <Globe className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                  <code className="text-[11px] font-mono text-amber-950 font-bold truncate">
-                    {currentHostname}
-                  </code>
+              {progress.isComplete && (
+                <div className="pt-2 space-y-2">
+                  <a
+                    href={progress.driveFolderUrl || driveTargetFolderUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 w-full py-2.5 bg-[#15803D] text-white text-[11px] uppercase font-mono tracking-widest font-bold hover:bg-[#25A238] transition-colors rounded-xs shadow-xs cursor-pointer"
+                  >
+                    <ExternalLink className="w-4 h-4" /> Abrir Carpeta en Google Drive ({TARGET_DRIVE_ACCOUNT})
+                  </a>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleCopyDomain}
-                  className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-950 text-[10px] font-mono font-bold flex items-center gap-1 rounded-xs cursor-pointer shrink-0 border border-amber-300"
-                >
-                  {copiedDomain ? <Check className="w-3 h-3 text-emerald-700" /> : <Copy className="w-3 h-3" />}
-                  {copiedDomain ? 'Copiado' : 'Copiar Dominio'}
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between gap-2 pt-1">
-                <a
-                  href={firebaseAuthSettingsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-[10.5px] font-mono font-bold text-amber-900 hover:text-amber-950 underline cursor-pointer"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  Abrir Dominios Autorizados en Firebase Console
-                </a>
-              </div>
-
-              <p className="text-[10px] text-amber-800/90 font-mono">
-                Pasos: Clic en <strong>"Copiar Dominio"</strong> → Abrir enlace de Firebase → En <em>"Dominios autorizados"</em> presionar <strong>"Agregar dominio"</strong>, pegar y guardar.
-              </p>
+              )}
             </div>
           )}
 
-          {/* Quick Offline Backup Option (Always Available for Technicians) */}
-          <div className="bg-slate-50 border border-slate-300 p-3.5 rounded-xs space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 font-serif italic text-sm text-slate-800 font-bold">
-                <Download className="w-4 h-4 text-[#15803D]" />
-                <span>Descarga Inmediata (Respaldo Offline):</span>
+          {/* Quick Alternative Actions: Email & ZIP */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+            {/* Quick Email Dispatch */}
+            <button
+              type="button"
+              onClick={handleSendByEmail}
+              className="p-3 bg-white border border-slate-300 hover:border-[#15803D] hover:bg-[#F0FDF4] text-slate-800 text-left rounded-xs transition-colors cursor-pointer flex flex-col justify-between gap-1 shadow-2xs"
+            >
+              <div className="flex items-center gap-1.5 font-bold text-xs text-[#14532D]">
+                <Mail className="w-3.5 h-3.5 text-[#15803D]" />
+                <span>Notificar por Correo</span>
               </div>
-            </div>
-            <p className="text-[11px] text-slate-600 leading-relaxed font-sans">
-              Descarga un archivo <strong>.ZIP</strong> completo que contiene el <strong>Reporte PDF Técnico SEC firmado</strong> y todas las <strong>{totalPhotosCount} fotos organizadas</strong> con sus nombres normalizados.
-            </p>
+              <p className="text-[10px] text-slate-500">
+                Enviar resumen a {TARGET_DRIVE_ACCOUNT}
+              </p>
+            </button>
+
+            {/* Offline ZIP Backup */}
             <button
               type="button"
               onClick={handleDownloadZipPackage}
               disabled={isDownloadingZip || isUploading}
-              className="w-full py-2 px-3 bg-white border border-[#14532D] text-[#14532D] hover:bg-[#F0FDF4] text-[10.5px] font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded-xs transition-colors cursor-pointer shadow-2xs"
+              className="p-3 bg-white border border-slate-300 hover:border-[#15803D] hover:bg-[#F0FDF4] text-slate-800 text-left rounded-xs transition-colors cursor-pointer flex flex-col justify-between gap-1 shadow-2xs disabled:opacity-50"
             >
-              {isDownloadingZip ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#14532D]" />
-                  <span>{zipStepMessage || 'Preparando Paquete ZIP...'}</span>
-                </>
-              ) : (
-                <>
-                  <Download className="w-3.5 h-3.5 text-[#14532D]" />
-                  <span>Descargar Paquete Completo (.ZIP / PDF + {totalPhotosCount} Fotos)</span>
-                </>
-              )}
+              <div className="flex items-center gap-1.5 font-bold text-xs text-[#14532D]">
+                {isDownloadingZip ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#15803D]" />
+                ) : (
+                  <Download className="w-3.5 h-3.5 text-[#15803D]" />
+                )}
+                <span>Descargar Paquete ZIP</span>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                {isDownloadingZip ? zipStepMessage || 'Preparando ZIP...' : `PDF + ${totalPhotosCount} fotos organizadas`}
+              </p>
             </button>
           </div>
 
@@ -391,7 +396,7 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
             >
               <span className="flex items-center gap-1.5">
                 <Key className="w-3 h-3 text-[#15803D]" />
-                Opciones avanzadas / Token de Google OAuth
+                Opciones avanzadas / Token OAuth de Google
               </span>
               {showManualToken ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
@@ -423,71 +428,12 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
             )}
           </div>
 
-          {/* Summary Box */}
-          <div className="bg-[#F7F5F2] p-3.5 border border-[#1A1A1A] space-y-2 rounded-xs">
-            <h4 className="font-serif italic text-sm text-[#1A1A1A] flex items-center gap-1.5 font-bold">
-              <FolderCheck className="w-4 h-4 text-[#15803D]" />
-              Archivos de la Inspección:
-            </h4>
-            <div className="grid grid-cols-2 gap-2 text-[#1A1A1A] font-sans">
-              <div className="flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-[#15803D]" />
-                <span>1 Reporte PDF Técnico SEC</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <ImageIcon className="w-3.5 h-3.5 text-[#15803D]" />
-                <span>{totalPhotosCount} Fotos de Evidencia</span>
-              </div>
-            </div>
-            <p className="text-[11px] font-mono opacity-80 pt-1.5 border-t border-[#1A1A1A]/20">
-              Ruta en Drive: <strong>INSTALACIONES SERVILEC / {buildInspectionBaseFileName(inspection).formattedName}</strong>
-            </p>
-          </div>
-
-          {/* Upload Progress Display */}
-          {progress && (
-            <div className="bg-[#F7F5F2] border border-[#1A1A1A] p-3.5 space-y-2 rounded-xs">
-              <div className="flex justify-between items-center text-[#1A1A1A] font-mono text-[11px] font-bold">
-                <span>{progress.currentStep}</span>
-                <span>
-                  {progress.completedFiles}/{progress.totalFiles}
-                </span>
-              </div>
-
-              <div className="w-full bg-white border border-[#1A1A1A] h-3 overflow-hidden rounded-2xs">
-                <div
-                  className="bg-[#15803D] h-full transition-all duration-300"
-                  style={{
-                    width: `${Math.round((progress.completedFiles / (progress.totalFiles || 1)) * 100)}%`,
-                  }}
-                />
-              </div>
-
-              <p className="text-[10px] font-mono text-[#1A1A1A] truncate">
-                {progress.currentFileName}
-              </p>
-
-              {progress.isComplete && progress.driveFolderUrl && (
-                <div className="pt-2">
-                  <a
-                    href={progress.driveFolderUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 w-full py-2.5 bg-[#15803D] text-white text-[10px] uppercase font-mono tracking-widest font-bold hover:bg-[#25A238] transition-colors rounded-xs shadow-xs"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" /> Abrir Carpeta en Google Drive ({TARGET_DRIVE_ACCOUNT})
-                  </a>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Error Message */}
-          {errorMessage && !isDomainError && (
-            <div className="bg-red-50 border border-red-300 text-red-900 p-3.5 text-xs font-mono space-y-1.5 rounded-xs">
-              <div className="flex items-center gap-1.5 text-red-950 font-bold">
-                <AlertCircle className="w-4 h-4 text-red-700 shrink-0" />
-                <span>Error al sincronizar:</span>
+          {errorMessage && (
+            <div className="bg-amber-50 border border-amber-300 text-amber-950 p-3.5 text-xs font-mono space-y-1.5 rounded-xs">
+              <div className="flex items-center gap-1.5 font-bold">
+                <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>Nota de sincronización:</span>
               </div>
               <p className="font-sans leading-relaxed text-[11.5px]">{errorMessage}</p>
             </div>
@@ -495,7 +441,7 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
         </div>
 
         {/* Action Buttons Footer */}
-        <div className="p-3.5 bg-slate-50 border-t border-[#1A1A1A] flex items-center justify-end gap-2.5 shrink-0 flex-wrap">
+        <div className="p-3.5 bg-slate-50 border-t border-[#1A1A1A] flex items-center justify-between gap-2.5 shrink-0 flex-wrap">
           <button
             onClick={onClose}
             disabled={isUploading || isAuthenticating || isDownloadingZip}
@@ -507,16 +453,16 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
           <button
             onClick={handleStartDriveUpload}
             disabled={isUploading || isAuthenticating || isDownloadingZip}
-            className="px-5 py-2.5 border border-[#14532D] bg-[#15803D] text-white text-[10px] uppercase font-mono tracking-widest font-bold hover:bg-[#25A238] flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 shadow-xs rounded-xs"
+            className="px-5 py-2.5 border border-[#14532D] bg-[#15803D] text-white text-[11px] uppercase font-mono tracking-widest font-bold hover:bg-[#25A238] flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 shadow-xs rounded-xs"
           >
-            {isUploading || isAuthenticating ? (
+            {isUploading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-white" />
-                <span>{isAuthenticating ? 'Conectando...' : 'Subiendo a Drive...'}</span>
+                <span>Subiendo a Google Drive...</span>
               </>
             ) : (
               <>
-                <HardDrive className="w-4 h-4 text-white" />
+                <Send className="w-4 h-4 text-white" />
                 <span>Subir a Google Drive ({TARGET_DRIVE_ACCOUNT})</span>
               </>
             )}

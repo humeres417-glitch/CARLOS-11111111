@@ -7,10 +7,10 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();
-// Request Google Drive Workspace scopes
-provider.addScope('https://www.googleapis.com/auth/drive');
+// Request Google Drive Workspace scopes (Least-privilege per-file access)
 provider.addScope('https://www.googleapis.com/auth/drive.file');
 provider.setCustomParameters({
+  login_hint: 'te4.servilec@gmail.com',
   prompt: 'select_account',
 });
 
