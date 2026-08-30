@@ -1,5 +1,6 @@
 import { Inspection, UploadProgress } from '../types';
 import { getAccessToken, googleSignIn } from './firebaseAuth';
+import JSZip from 'jszip';
 
 /**
  * Google Drive API helper configured for upload to te4.servilec@gmail.com
@@ -410,6 +411,76 @@ export async function uploadFullInspectionToDrive(
 
   // If no activeToken is present, seamlessly upload via server route without forcing popup login
   return executeServerFallbackUpload();
+}
+
+/**
+ * Downloads full inspection pack (.ZIP) containing:
+ * - PDF Report with standardized name: "[Cliente]_[Direccion]_[Fecha].pdf"
+ * - Subfolder "Fotos_Inspeccion_TE4" with all item photos properly tagged
+ */
+export async function downloadInspectionZip(
+  inspection: Inspection,
+  pdfBlob: Blob,
+  onProgress?: (step: string) => void
+): Promise<void> {
+  const zip = new JSZip();
+  const { formattedName } = buildInspectionBaseFileName(inspection);
+
+  if (onProgress) onProgress('Preparando informe PDF...');
+  zip.file(`${formattedName}.pdf`, pdfBlob);
+
+  const photosFolder = zip.folder('Fotos_Inspeccion_TE4');
+  const allPhotos: { itemCode: string; itemTitle: string; photo: any }[] = [];
+
+  inspection.categories.forEach((cat) => {
+    cat.items.forEach((item) => {
+      item.photos.forEach((photo) => {
+        allPhotos.push({
+          itemCode: item.code,
+          itemTitle: item.title,
+          photo,
+        });
+      });
+    });
+  });
+
+  for (let i = 0; i < allPhotos.length; i++) {
+    const itemData = allPhotos[i];
+    if (onProgress) onProgress(`Comprimiendo Foto ${i + 1} de ${allPhotos.length}...`);
+
+    const safePhotoName = `Item_${itemData.itemCode}_Foto_${i + 1}_${(itemData.photo.name || 'evidencia').replace(/[^a-zA-Z0-9_-]/g, '_')}.jpg`;
+
+    if (itemData.photo.url) {
+      try {
+        if (itemData.photo.url.startsWith('data:')) {
+          const base64Data = itemData.photo.url.split(',')[1];
+          photosFolder?.file(safePhotoName, base64Data, { base64: true });
+        } else if (itemData.photo.url.startsWith('http')) {
+          const res = await fetch(itemData.photo.url);
+          const b = await res.blob();
+          photosFolder?.file(safePhotoName, b);
+        }
+      } catch (e) {
+        console.warn(`Error agregando foto ${safePhotoName} al ZIP:`, e);
+      }
+    }
+  }
+
+  if (onProgress) onProgress('Generando archivo comprimido .ZIP...');
+  const zipBlob = await zip.generateAsync({
+    type: 'blob',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 },
+  });
+
+  const downloadUrl = URL.createObjectURL(zipBlob);
+  const link = document.createElement('a');
+  link.href = downloadUrl;
+  link.download = `${formattedName}_SERVILEC_TE4.zip`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
 }
 
 

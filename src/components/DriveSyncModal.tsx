@@ -1,9 +1,40 @@
 import React, { useState, useEffect } from 'react';
-import { HardDrive, ExternalLink, Loader2, FolderCheck, FileText, Image as ImageIcon, CheckCircle, LogIn, LogOut, Key, Copy, Check, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
+import {
+  HardDrive,
+  ExternalLink,
+  Loader2,
+  FolderCheck,
+  FileText,
+  Image as ImageIcon,
+  CheckCircle,
+  LogIn,
+  LogOut,
+  Key,
+  Copy,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  AlertCircle,
+  Download,
+  ShieldAlert,
+  Globe,
+} from 'lucide-react';
 import { Inspection, UploadProgress } from '../types';
-import { uploadFullInspectionToDrive, TARGET_DRIVE_ACCOUNT, buildInspectionBaseFileName } from '../utils/googleDrive';
+import {
+  uploadFullInspectionToDrive,
+  downloadInspectionZip,
+  TARGET_DRIVE_ACCOUNT,
+  buildInspectionBaseFileName,
+} from '../utils/googleDrive';
 import { generateTE4PdfReport } from '../utils/pdfGenerator';
-import { googleSignIn, initAuth, logoutGoogle, getAccessToken, setManualAccessToken, getCurrentUser } from '../utils/firebaseAuth';
+import {
+  googleSignIn,
+  initAuth,
+  logoutGoogle,
+  getAccessToken,
+  setManualAccessToken,
+  getCurrentUser,
+} from '../utils/firebaseAuth';
 
 interface DriveSyncModalProps {
   isOpen: boolean;
@@ -21,15 +52,24 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
 }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+  const [zipStepMessage, setZipStepMessage] = useState<string | null>(null);
   const [user, setUser] = useState<any | null>(getCurrentUser());
   const [hasToken, setHasToken] = useState<boolean>(!!getAccessToken());
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isDomainError, setIsDomainError] = useState(false);
   const [showManualToken, setShowManualToken] = useState(false);
   const [manualTokenInput, setManualTokenInput] = useState('');
   const [copiedDomain, setCopiedDomain] = useState(false);
 
   const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isCustomDomain =
+    currentHostname &&
+    currentHostname !== 'localhost' &&
+    currentHostname !== '127.0.0.1' &&
+    !currentHostname.includes('firebaseapp.com') &&
+    !currentHostname.includes('web.app');
 
   useEffect(() => {
     if (isOpen) {
@@ -64,6 +104,7 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
 
   const handleGoogleLogin = async () => {
     setErrorMessage(null);
+    setIsDomainError(false);
     setIsAuthenticating(true);
     try {
       const result = await googleSignIn();
@@ -73,6 +114,13 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
       console.error('Login error:', err);
       const msg = err?.message || 'Error al conectar con Google.';
       setErrorMessage(msg);
+      if (
+        err?.code === 'auth/unauthorized-domain' ||
+        msg.includes('unauthorized-domain') ||
+        msg.includes('Dominio temporal no autorizado')
+      ) {
+        setIsDomainError(true);
+      }
     } finally {
       setIsAuthenticating(false);
     }
@@ -83,6 +131,7 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
     setUser(null);
     setHasToken(false);
     setErrorMessage(null);
+    setIsDomainError(false);
   };
 
   const handleApplyManualToken = () => {
@@ -91,6 +140,7 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
     setHasToken(true);
     setUser({ displayName: 'Técnico Servilec', email: TARGET_DRIVE_ACCOUNT });
     setErrorMessage(null);
+    setIsDomainError(false);
     setShowManualToken(false);
     setManualTokenInput('');
   };
@@ -99,25 +149,32 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
     if (!currentHostname) return;
     navigator.clipboard.writeText(currentHostname);
     setCopiedDomain(true);
-    setTimeout(() => setCopiedDomain(false), 2500);
+    setTimeout(() => setCopiedDomain(false), 3000);
   };
 
   const handleStartDriveUpload = async () => {
     setErrorMessage(null);
+    setIsDomainError(false);
     setIsUploading(true);
 
     try {
-      let currentToken = getAccessToken() || undefined;
+      const currentToken = getAccessToken() || undefined;
 
-      // If no token is present, try automatic Google connect once
-      if (!currentToken) {
+      // If on a custom domain without token, check if we need to authenticate
+      if (!currentToken && !isDomainError) {
         try {
           const authRes = await googleSignIn();
-          currentToken = authRes.accessToken;
           setUser(authRes.user);
           setHasToken(true);
-        } catch (e) {
-          console.warn('Auto-auth before upload was skipped or failed, proceeding with server upload:', e);
+        } catch (e: any) {
+          console.warn('Auto-auth attempt warning:', e);
+          if (
+            e?.code === 'auth/unauthorized-domain' ||
+            e?.message?.includes('unauthorized-domain') ||
+            e?.message?.includes('Dominio')
+          ) {
+            setIsDomainError(true);
+          }
         }
       }
 
@@ -128,7 +185,7 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
       const { folderId, folderUrl } = await uploadFullInspectionToDrive(
         inspection,
         pdfBlob,
-        currentToken,
+        getAccessToken() || undefined,
         (currentProgress) => {
           setProgress(currentProgress);
         }
@@ -137,39 +194,71 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
       onInspectionUploaded(folderId, folderUrl);
     } catch (err: any) {
       console.error('Error en carga a Google Drive:', err);
-      setErrorMessage(err.message || 'Error durante la carga a Google Drive.');
+      const msg = err.message || 'Error durante la carga a Google Drive.';
+      setErrorMessage(msg);
+      if (
+        err?.code === 'auth/unauthorized-domain' ||
+        msg.includes('unauthorized-domain') ||
+        msg.includes('Dominio')
+      ) {
+        setIsDomainError(true);
+      }
     } finally {
       setIsUploading(false);
       setIsAuthenticating(false);
     }
   };
 
+  const handleDownloadZipPackage = async () => {
+    setIsDownloadingZip(true);
+    setZipStepMessage('Generando reporte PDF...');
+    try {
+      const pdfBlob = await generateTE4PdfReport(inspection);
+      await downloadInspectionZip(inspection, pdfBlob, (step) => {
+        setZipStepMessage(step);
+      });
+      setZipStepMessage(null);
+    } catch (err: any) {
+      console.error('Error generando paquete ZIP:', err);
+      setErrorMessage(err.message || 'Error al generar paquete ZIP.');
+    } finally {
+      setIsDownloadingZip(false);
+      setZipStepMessage(null);
+    }
+  };
+
+  const firebaseAuthSettingsUrl = `https://console.firebase.google.com/project/gen-lang-client-0269277436/authentication/settings`;
+
   return (
-    <div className="fixed inset-0 z-50 bg-[#1A1A1A]/80 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white border border-[#1A1A1A] max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden shadow-2xl">
+    <div className="fixed inset-0 z-50 bg-[#1A1A1A]/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-white border border-[#1A1A1A] max-w-lg w-full max-h-[94vh] flex flex-col overflow-hidden shadow-2xl rounded-xs">
         {/* Modal Header */}
-        <div className="bg-gradient-to-r from-[#0F172A] via-[#14532D] to-[#15803D] text-white px-6 py-4 flex items-center justify-between border-b-2 border-[#25A238] shrink-0">
+        <div className="bg-gradient-to-r from-[#0F172A] via-[#14532D] to-[#15803D] text-white px-5 py-3.5 flex items-center justify-between border-b-2 border-[#25A238] shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-[#25A238] text-white flex items-center justify-center font-bold rounded-xs shadow-xs">
               <HardDrive className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h3 className="text-base font-serif italic text-white font-bold">Google Drive — Respaldo de Inspección</h3>
-              <p className="text-[10px] uppercase font-mono tracking-widest text-emerald-100/80">SERVILEC ENERGÍA • {TARGET_DRIVE_ACCOUNT}</p>
+              <h3 className="text-base font-serif italic text-white font-bold leading-tight">
+                Google Drive — Respaldo de Inspección
+              </h3>
+              <p className="text-[10px] uppercase font-mono tracking-widest text-emerald-100/90">
+                SERVILEC ENERGÍA • {TARGET_DRIVE_ACCOUNT}
+              </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            disabled={isUploading || isAuthenticating}
-            className="text-white hover:text-emerald-200 font-mono text-sm font-bold cursor-pointer"
+            disabled={isUploading || isAuthenticating || isDownloadingZip}
+            className="text-white hover:text-emerald-200 font-mono text-xs font-bold cursor-pointer px-2 py-1"
           >
             [CERRAR]
           </button>
         </div>
 
-        <div className="p-6 space-y-4 text-xs text-[#1A1A1A] overflow-y-auto">
+        <div className="p-5 space-y-4 text-xs text-[#1A1A1A] overflow-y-auto">
           {/* Account Status / Auth Box */}
-          <div className="bg-[#F0FDF4] p-4 border border-[#15803D]/40 space-y-2.5 rounded-xs">
+          <div className="bg-[#F0FDF4] p-3.5 border border-[#15803D]/40 space-y-2.5 rounded-xs">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <span className="text-[10px] uppercase font-mono tracking-widest text-[#14532D] font-bold block">
@@ -179,7 +268,7 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
                   {TARGET_DRIVE_ACCOUNT}
                 </strong>
               </div>
-              
+
               <div className="flex items-center gap-2">
                 {hasToken ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#15803D] text-white text-[10px] font-mono font-bold rounded-xs shadow-xs">
@@ -188,7 +277,7 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
                 ) : (
                   <button
                     onClick={handleGoogleLogin}
-                    disabled={isAuthenticating || isUploading}
+                    disabled={isAuthenticating || isUploading || isDownloadingZip}
                     className="px-3.5 py-1.5 bg-[#15803D] text-white text-[10px] font-mono font-bold hover:bg-[#16A34A] flex items-center gap-1.5 rounded-xs transition-colors cursor-pointer shadow-xs"
                     title="Conectar cuenta de Google con permisos de Drive"
                   >
@@ -197,19 +286,15 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
                     ) : (
                       <LogIn className="w-3.5 h-3.5" />
                     )}
-                    Conectar Google Drive
+                    Conectar Google
                   </button>
                 )}
               </div>
             </div>
 
-            <p className="text-[11px] text-[#14532D]/90 font-sans leading-relaxed pt-1 border-t border-[#15803D]/20">
-              <strong>Subida Directa:</strong> Presiona <strong>"Subir a Google Drive"</strong> para respaldar el informe PDF firmado y las {totalPhotosCount} fotos organizadas en carpetas con el formato <em>Cliente_Dirección_Fecha</em>.
-            </p>
-
             {hasToken && user && (
-              <div className="flex items-center justify-between text-[10px] text-[#14532D]/80 font-mono pt-1 border-t border-[#15803D]/20">
-                <span>Sesión activa: {user.displayName || user.email || TARGET_DRIVE_ACCOUNT}</span>
+              <div className="flex items-center justify-between text-[10px] text-[#14532D]/90 font-mono pt-1.5 border-t border-[#15803D]/20">
+                <span>Sesión: {user.displayName || user.email || TARGET_DRIVE_ACCOUNT}</span>
                 <button
                   onClick={handleGoogleLogout}
                   className="text-red-700 hover:underline flex items-center gap-1 cursor-pointer font-bold"
@@ -220,7 +305,84 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
             )}
           </div>
 
-          {/* Collapsible Manual Token / Domain Info */}
+          {/* Domain Authorization Helper (Shown on Custom Domains or when error occurs) */}
+          {(isDomainError || isCustomDomain) && !hasToken && (
+            <div className="bg-amber-50/90 border border-amber-300 p-3.5 rounded-xs space-y-2.5">
+              <div className="flex items-center gap-2 text-amber-950 font-bold text-xs">
+                <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>Autorizar Dominio en Firebase Console:</span>
+              </div>
+              <p className="text-[11px] text-amber-900 leading-relaxed font-sans">
+                Para que Google permita iniciar sesión desde este dominio (<strong>{currentHostname}</strong>), solo debes agregarlo una vez a la lista de dominios autorizados de Firebase:
+              </p>
+
+              <div className="bg-white p-2 border border-amber-200 rounded-xs flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 truncate">
+                  <Globe className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                  <code className="text-[11px] font-mono text-amber-950 font-bold truncate">
+                    {currentHostname}
+                  </code>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyDomain}
+                  className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-950 text-[10px] font-mono font-bold flex items-center gap-1 rounded-xs cursor-pointer shrink-0 border border-amber-300"
+                >
+                  {copiedDomain ? <Check className="w-3 h-3 text-emerald-700" /> : <Copy className="w-3 h-3" />}
+                  {copiedDomain ? 'Copiado' : 'Copiar Dominio'}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <a
+                  href={firebaseAuthSettingsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-[10.5px] font-mono font-bold text-amber-900 hover:text-amber-950 underline cursor-pointer"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Abrir Dominios Autorizados en Firebase Console
+                </a>
+              </div>
+
+              <p className="text-[10px] text-amber-800/90 font-mono">
+                Pasos: Clic en <strong>"Copiar Dominio"</strong> → Abrir enlace de Firebase → En <em>"Dominios autorizados"</em> presionar <strong>"Agregar dominio"</strong>, pegar y guardar.
+              </p>
+            </div>
+          )}
+
+          {/* Quick Offline Backup Option (Always Available for Technicians) */}
+          <div className="bg-slate-50 border border-slate-300 p-3.5 rounded-xs space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 font-serif italic text-sm text-slate-800 font-bold">
+                <Download className="w-4 h-4 text-[#15803D]" />
+                <span>Descarga Inmediata (Respaldo Offline):</span>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-600 leading-relaxed font-sans">
+              Descarga un archivo <strong>.ZIP</strong> completo que contiene el <strong>Reporte PDF Técnico SEC firmado</strong> y todas las <strong>{totalPhotosCount} fotos organizadas</strong> con sus nombres normalizados.
+            </p>
+            <button
+              type="button"
+              onClick={handleDownloadZipPackage}
+              disabled={isDownloadingZip || isUploading}
+              className="w-full py-2 px-3 bg-white border border-[#14532D] text-[#14532D] hover:bg-[#F0FDF4] text-[10.5px] font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-2 rounded-xs transition-colors cursor-pointer shadow-2xs"
+            >
+              {isDownloadingZip ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#14532D]" />
+                  <span>{zipStepMessage || 'Preparando Paquete ZIP...'}</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-3.5 h-3.5 text-[#14532D]" />
+                  <span>Descargar Paquete Completo (.ZIP / PDF + {totalPhotosCount} Fotos)</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Collapsible Manual Token / Advanced Options */}
           <div className="border border-slate-200 bg-slate-50/70 p-3 rounded-xs space-y-2">
             <button
               type="button"
@@ -229,7 +391,7 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
             >
               <span className="flex items-center gap-1.5">
                 <Key className="w-3 h-3 text-[#15803D]" />
-                Opciones avanzadas de conexión / Token
+                Opciones avanzadas / Token de Google OAuth
               </span>
               {showManualToken ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
@@ -257,34 +419,15 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
                     </button>
                   </div>
                 </div>
-
-                <div className="bg-white p-2.5 border border-slate-200 rounded-xs space-y-1">
-                  <span className="block text-[10px] font-mono text-slate-500 uppercase font-bold">
-                    Dominio de la aplicación (para Firebase Console / Google Cloud):
-                  </span>
-                  <div className="flex items-center justify-between gap-2">
-                    <code className="text-[11px] font-mono text-[#15803D] bg-emerald-50 px-2 py-0.5 rounded-2xs break-all">
-                      {currentHostname}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={handleCopyDomain}
-                      className="px-2.5 py-1 border border-slate-300 bg-slate-100 hover:bg-slate-200 text-[10px] font-mono font-bold flex items-center gap-1 rounded-xs cursor-pointer shrink-0"
-                    >
-                      {copiedDomain ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                      {copiedDomain ? 'Copiado' : 'Copiar'}
-                    </button>
-                  </div>
-                </div>
               </div>
             )}
           </div>
 
           {/* Summary Box */}
-          <div className="bg-[#F7F5F2] p-4 border border-[#1A1A1A] space-y-2 rounded-xs">
+          <div className="bg-[#F7F5F2] p-3.5 border border-[#1A1A1A] space-y-2 rounded-xs">
             <h4 className="font-serif italic text-sm text-[#1A1A1A] flex items-center gap-1.5 font-bold">
               <FolderCheck className="w-4 h-4 text-[#15803D]" />
-              Archivos a Cargar:
+              Archivos de la Inspección:
             </h4>
             <div className="grid grid-cols-2 gap-2 text-[#1A1A1A] font-sans">
               <div className="flex items-center gap-1.5">
@@ -303,13 +446,15 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
 
           {/* Upload Progress Display */}
           {progress && (
-            <div className="bg-[#F7F5F2] border border-[#1A1A1A] p-4 space-y-2 rounded-xs">
+            <div className="bg-[#F7F5F2] border border-[#1A1A1A] p-3.5 space-y-2 rounded-xs">
               <div className="flex justify-between items-center text-[#1A1A1A] font-mono text-[11px] font-bold">
                 <span>{progress.currentStep}</span>
-                <span>{progress.completedFiles}/{progress.totalFiles}</span>
+                <span>
+                  {progress.completedFiles}/{progress.totalFiles}
+                </span>
               </div>
 
-              <div className="w-full bg-white border border-[#1A1A1A] h-3 overflow-hidden">
+              <div className="w-full bg-white border border-[#1A1A1A] h-3 overflow-hidden rounded-2xs">
                 <div
                   className="bg-[#15803D] h-full transition-all duration-300"
                   style={{
@@ -338,27 +483,22 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
           )}
 
           {/* Error Message */}
-          {errorMessage && (
+          {errorMessage && !isDomainError && (
             <div className="bg-red-50 border border-red-300 text-red-900 p-3.5 text-xs font-mono space-y-1.5 rounded-xs">
               <div className="flex items-center gap-1.5 text-red-950 font-bold">
                 <AlertCircle className="w-4 h-4 text-red-700 shrink-0" />
-                <span>Error de Conexión:</span>
+                <span>Error al sincronizar:</span>
               </div>
               <p className="font-sans leading-relaxed text-[11.5px]">{errorMessage}</p>
-              {errorMessage.includes('unauthorized-domain') && (
-                <div className="mt-2 pt-2 border-t border-red-200 text-[11px] font-sans">
-                  <strong>Solución recomendada:</strong> Haz clic de nuevo en <strong>"Conectar Google Drive"</strong> para usar el inicio de sesión directo de Google Identity, o presiona <strong>"Subir a Google Drive"</strong> directamente.
-                </div>
-              )}
             </div>
           )}
         </div>
 
-        {/* Action Buttons */}
-        <div className="p-4 bg-slate-50 border-t border-[#1A1A1A] flex items-center justify-end gap-3 shrink-0">
+        {/* Action Buttons Footer */}
+        <div className="p-3.5 bg-slate-50 border-t border-[#1A1A1A] flex items-center justify-end gap-2.5 shrink-0 flex-wrap">
           <button
             onClick={onClose}
-            disabled={isUploading || isAuthenticating}
+            disabled={isUploading || isAuthenticating || isDownloadingZip}
             className="px-4 py-2.5 border border-[#1A1A1A] bg-white text-[#1A1A1A] text-[10px] uppercase font-mono tracking-widest font-bold hover:bg-[#F7F5F2] transition-colors cursor-pointer rounded-xs"
           >
             Cerrar
@@ -366,13 +506,13 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
 
           <button
             onClick={handleStartDriveUpload}
-            disabled={isUploading || isAuthenticating}
+            disabled={isUploading || isAuthenticating || isDownloadingZip}
             className="px-5 py-2.5 border border-[#14532D] bg-[#15803D] text-white text-[10px] uppercase font-mono tracking-widest font-bold hover:bg-[#25A238] flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 shadow-xs rounded-xs"
           >
             {isUploading || isAuthenticating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-white" />
-                <span>{isAuthenticating ? 'Conectando con Google...' : 'Subiendo a Google Drive...'}</span>
+                <span>{isAuthenticating ? 'Conectando...' : 'Subiendo a Drive...'}</span>
               </>
             ) : (
               <>
@@ -386,5 +526,3 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
     </div>
   );
 };
-
-
