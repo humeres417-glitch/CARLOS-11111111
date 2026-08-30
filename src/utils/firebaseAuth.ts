@@ -99,7 +99,7 @@ export const signInWithGSI = async (): Promise<{ user: any; accessToken: string 
     throw new Error('Google Identity Services (GSI) no está disponible en el navegador.');
   }
 
-  const clientId = (firebaseConfig as any).oAuthClientId || '286147952642-l896k1v4775eqob7kq2s5j7cu34mqrlk.apps.googleusercontent.com';
+  const clientId = (firebaseConfig as any).oAuthClientId || '599947811375-g7fobqgdq48gee6qvqgba68ag8259rqu.apps.googleusercontent.com';
 
   return new Promise((resolve, reject) => {
     try {
@@ -243,16 +243,7 @@ export const initAuth = (
 export const googleSignIn = async (): Promise<{ user: any; accessToken: string }> => {
   isSigningIn = true;
 
-  // Try GSI first
-  try {
-    const gsiResult = await signInWithGSI();
-    isSigningIn = false;
-    return gsiResult;
-  } catch (gsiError: any) {
-    console.warn('GSI SignIn failed or unavailable, falling back to Firebase Auth:', gsiError);
-  }
-
-  // Fallback to Firebase Auth
+  // 1. Try Firebase Auth popup first (officially integrated with provisioned OAuth credentials)
   try {
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
@@ -271,16 +262,27 @@ export const googleSignIn = async (): Promise<{ user: any; accessToken: string }
     }
 
     notifyAuthListeners(result.user, cachedAccessToken);
+    isSigningIn = false;
     return { user: result.user, accessToken: cachedAccessToken };
-  } catch (error: any) {
-    console.error('Google Sign-In Error:', error);
-    if (error?.code === 'auth/unauthorized-domain' || error?.message?.includes('unauthorized-domain')) {
-      const currentHost = window.location.hostname;
+  } catch (firebaseErr: any) {
+    console.warn('Firebase Popup error, attempting GSI Token Client fallback:', firebaseErr);
+    
+    // 2. Try GSI Token Client as alternative
+    try {
+      const gsiResult = await signInWithGSI();
+      isSigningIn = false;
+      return gsiResult;
+    } catch (gsiErr: any) {
+      console.warn('GSI fallback also failed:', gsiErr);
+    }
+
+    const currentHost = window.location.hostname;
+    if (firebaseErr?.code === 'auth/unauthorized-domain' || firebaseErr?.message?.includes('unauthorized-domain')) {
       throw new Error(
-        `Dominio no autorizado en Firebase (${currentHost}). Intente nuevamente para usar Google Identity directo o autorice el dominio "${currentHost}" en la consola de Firebase.`
+        `Dominio no autorizado en Firebase (${currentHost}). Puedes presionar "Subir a Google Drive" directamente o utilizar un token de acceso en las Opciones avanzadas.`
       );
     }
-    throw error;
+    throw firebaseErr;
   } finally {
     isSigningIn = false;
   }
