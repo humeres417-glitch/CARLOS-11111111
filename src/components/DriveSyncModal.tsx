@@ -110,7 +110,7 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
     } catch (err: any) {
       console.warn('Login note:', err);
       setErrorMessage(
-        err?.message || 'Para conectar tu cuenta personal, puedes usar las Opciones Avanzadas o subir directamente con el botón verde sin necesidad de iniciar sesión.'
+        err?.message || 'No se pudo completar el inicio de sesión con Google. Por favor reintente o use Opciones Avanzadas.'
       );
     } finally {
       setIsAuthenticating(false);
@@ -140,24 +140,32 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
     setUploadSuccessUrl(null);
 
     try {
-      // 1. Generate PDF Report Blob
-      if (progress === null) {
-        setProgress({
-          currentStep: 'Generando Reporte Técnico SEC en PDF...',
-          totalFiles: totalPhotosCount + 1,
-          completedFiles: 0,
-          currentFileName: `${formattedName}.pdf`,
-          isComplete: false,
-        });
+      let activeTok = getAccessToken();
+      if (!activeTok) {
+        setIsAuthenticating(true);
+        const loginRes = await googleSignIn();
+        activeTok = loginRes.accessToken;
+        setUser(loginRes.user);
+        setHasToken(true);
+        setIsAuthenticating(false);
       }
+
+      // 1. Generate PDF Report Blob
+      setProgress({
+        currentStep: 'Generando Reporte Técnico SEC en PDF...',
+        totalFiles: totalPhotosCount + 1,
+        completedFiles: 0,
+        currentFileName: `${formattedName}.pdf`,
+        isComplete: false,
+      });
 
       const pdfBlob = await generateTE4PdfReport(inspection);
 
-      // 2. Upload Report and Photos directly to Google Drive (agile flow)
+      // 2. Upload Report and Photos directly to Google Drive
       const { folderId, folderUrl } = await uploadFullInspectionToDrive(
         inspection,
         pdfBlob,
-        getAccessToken() || undefined,
+        activeTok,
         (currentProgress) => {
           setProgress(currentProgress);
         }

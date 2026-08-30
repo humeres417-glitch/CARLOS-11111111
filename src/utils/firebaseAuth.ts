@@ -16,9 +16,18 @@ provider.setCustomParameters({
 
 // Flag to indicate if we are in the middle of a sign-in flow
 let isSigningIn = false;
-// Cache the access token in memory
+// Cache the access token in memory and session
 let cachedAccessToken: string | null = null;
 let cachedUser: User | null = null;
+
+try {
+  if (typeof window !== 'undefined') {
+    const saved = sessionStorage.getItem('te4_google_access_token');
+    if (saved) cachedAccessToken = saved;
+  }
+} catch {
+  // Ignore sessionStorage errors
+}
 
 const authListeners: Array<(user: User | null, token: string | null) => void> = [];
 
@@ -49,13 +58,15 @@ export const initAuth = (
       if (cachedAccessToken) {
         if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
         notifyAuthListeners(user, cachedAccessToken);
-      } else if (!isSigningIn) {
-        cachedAccessToken = null;
-        if (onAuthFailure) onAuthFailure();
+      } else {
+        notifyAuthListeners(user, null);
       }
     } else {
       cachedAccessToken = null;
       cachedUser = null;
+      try {
+        if (typeof window !== 'undefined') sessionStorage.removeItem('te4_google_access_token');
+      } catch {}
       if (onAuthFailure) onAuthFailure();
       notifyAuthListeners(null, null);
     }
@@ -77,6 +88,12 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 
     cachedAccessToken = credential.accessToken;
     cachedUser = result.user;
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('te4_google_access_token', credential.accessToken);
+      }
+    } catch {}
+
     notifyAuthListeners(result.user, cachedAccessToken);
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
@@ -105,6 +122,11 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 export const setManualAccessToken = (token: string, email?: string): void => {
   const cleanToken = token.trim();
   cachedAccessToken = cleanToken;
+  try {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('te4_google_access_token', cleanToken);
+    }
+  } catch {}
   const userObj = {
     displayName: email || 'Técnico Autorizado',
     email: email || 'te4.servilec@gmail.com',
@@ -139,5 +161,8 @@ export const logoutGoogle = async () => {
   }
   cachedAccessToken = null;
   cachedUser = null;
+  try {
+    if (typeof window !== 'undefined') sessionStorage.removeItem('te4_google_access_token');
+  } catch {}
   notifyAuthListeners(null, null);
 };

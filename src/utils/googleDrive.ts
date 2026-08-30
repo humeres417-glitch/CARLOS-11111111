@@ -174,9 +174,19 @@ export async function uploadFileToDrive(
     parents: [folderId],
   };
 
-  const formData = new FormData();
-  formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-  formData.append('file', blob);
+  const boundary = 'foo_bar_baz_te4_boundary';
+  const delimiter = `\r\n--${boundary}\r\n`;
+  const closeDelimiter = `\r\n--${boundary}--`;
+
+  const metadataPart = `${delimiter}Content-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}`;
+  const mediaPartHeader = `${delimiter}Content-Type: ${blob.type || mimeType || 'application/octet-stream'}\r\n\r\n`;
+
+  const multipartBody = new Blob([
+    metadataPart,
+    mediaPartHeader,
+    blob,
+    closeDelimiter
+  ], { type: `multipart/related; boundary=${boundary}` });
 
   const response = await fetch(
     'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink',
@@ -184,14 +194,18 @@ export async function uploadFileToDrive(
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
       },
-      body: formData,
+      body: multipartBody,
     }
   );
 
   if (!response.ok) {
     const errJson = await response.json().catch(() => ({}));
     const msg = errJson.error?.message || response.statusText;
+    if (response.status === 401) {
+      throw new Error(`Sesión de Google expirada o no autorizada (401). Por favor vuelva a conectar su cuenta con el botón Conectar.`);
+    }
     throw new Error(`Error al subir ${fileName} a Google Drive (${response.status}): ${msg}`);
   }
 
@@ -248,7 +262,6 @@ export async function findOrCreateFolder(
 
 /**
  * Uploads complete Inspection (PDF report + all item photos) to Google Drive
- * Supports direct client OAuth upload or seamless server proxy upload for any technician without authorization required
  */
 export async function uploadFullInspectionToDrive(
   inspection: Inspection,
@@ -258,159 +271,124 @@ export async function uploadFullInspectionToDrive(
 ): Promise<{ folderId: string; folderUrl: string }> {
   let activeToken = accessToken || getStoredAccessToken();
 
-  // Helper for server fallback upload
-  const executeServerFallbackUpload = async () => {
+  if (!activeToken) {
+    throw new Error('Por favor presione "Conectar Google" para autorizar el acceso y subir la inspección a Google Drive.');
+  }
+
+  // Collect all item photos
+  const allPhotos: { categoryTitle: string; itemCode: string; itemTitle: string; photo: any }[] = [];
+  
+  inspection.categories.forEach((cat) => {
+    cat.items.forEach((item) => {
+      item.photos.forEach((photo) => {
+        allPhotos.push({
+          categoryTitle: cat.title,
+          itemCode: item.code,
+          itemTitle: item.title,
+          photo,
+        });
+      });
+    });
+  });
+
+  const totalFiles = 1 + allPhotos.length;
+  let completedFiles = 0;
+
+  if (onProgress) {
+    onProgress({
+      currentStep: `Conectando con Google Drive (${TARGET_DRIVE_ACCOUNT})...`,
+      totalFiles,
+      completedFiles: 0,
+      currentFileName: 'Carpeta Principal INSTALACIONES SERVILEC',
+      isComplete: false,
+    });
+  }
+
+  // 1. Find or create root folder "INSTALACIONES SERVILEC"
+  const rootFolder = await findOrCreateFolder('INSTALACIONES SERVILEC', undefined, activeToken);
+
+  // 2. Create Project Subfolder with format: "nombre cliente_direccion_fecha"
+  const { formattedName } = buildInspectionBaseFileName(inspection);
+  const projectFolderName = formattedName;
+
+  if (onProgress) {
+    onProgress({
+      currentStep: `Creando carpeta de proyecto: ${projectFolderName}...`,
+      totalFiles,
+      completedFiles: 0,
+      currentFileName: projectFolderName,
+      isComplete: false,
+    });
+  }
+
+  const projectFolder = await createDriveFolder(projectFolderName, rootFolder.id, activeToken);
+
+  // 3. Upload PDF Report formatted as: "nombre cliente_direccion_fecha.pdf"
+  const pdfFileName = `${formattedName}.pdf`;
+
+  if (onProgress) {
+    onProgress({
+      currentStep: 'Subiendo Reporte Técnico SEC en PDF...',
+      totalFiles,
+      completedFiles: 1,
+      currentFileName: pdfFileName,
+      isComplete: false,
+    });
+  }
+
+  await uploadFileToDrive(pdfBlob, pdfFileName, 'application/pdf', projectFolder.id, activeToken);
+  completedFiles = 1;
+
+  // 4. Create Subfolder "Fotos_Inspeccion_TE4" for photos if any photos exist
+  if (allPhotos.length > 0) {
     if (onProgress) {
       onProgress({
-        currentStep: `Subiendo informe a Google Drive (${TARGET_DRIVE_ACCOUNT})...`,
-        totalFiles: 1,
-        completedFiles: 0,
-        currentFileName: `Procesando respaldo para ${TARGET_DRIVE_ACCOUNT}`,
+        currentStep: 'Creando subcarpeta Fotos_Inspeccion_TE4...',
+        totalFiles,
+        completedFiles,
+        currentFileName: 'Fotos_Inspeccion_TE4',
         isComplete: false,
       });
     }
 
-    const pdfBase64 = await blobToBase64(pdfBlob);
-    const response = await fetch('/api/drive/upload-inspection', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        inspection,
-        pdfBase64,
-        accessToken: activeToken || undefined,
-      }),
-    });
+    const photosFolder = await createDriveFolder('Fotos_Inspeccion_TE4', projectFolder.id, activeToken);
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || 'Error al comunicarse con el servidor de respaldo de Google Drive.');
-    }
-
-    const result = await response.json();
-    const folderUrl = result.folderUrl || `https://drive.google.com/drive/u/0/my-drive`;
-
-    if (onProgress) {
-      onProgress({
-        currentStep: `¡Carga exitosa a Google Drive (${TARGET_DRIVE_ACCOUNT})!`,
-        totalFiles: 1,
-        completedFiles: 1,
-        currentFileName: 'Informe y fotos respaldados correctamente',
-        isComplete: true,
-        driveFolderUrl: folderUrl,
-      });
-    }
-
-    return {
-      folderId: result.folderId || 'folder-servilec',
-      folderUrl,
-    };
-  };
-
-  // If activeToken exists, try direct client upload first
-  if (activeToken) {
-    try {
-      // Collect all item photos
-      const allPhotos: { categoryTitle: string; itemCode: string; itemTitle: string; photo: any }[] = [];
-      
-      inspection.categories.forEach((cat) => {
-        cat.items.forEach((item) => {
-          item.photos.forEach((photo) => {
-            allPhotos.push({
-              categoryTitle: cat.title,
-              itemCode: item.code,
-              itemTitle: item.title,
-              photo,
-            });
-          });
-        });
-      });
-
-      const totalFiles = 1 + allPhotos.length;
-      let completedFiles = 0;
+    for (let i = 0; i < allPhotos.length; i++) {
+      const photoData = allPhotos[i];
+      const photoName = `Item_${photoData.itemCode}_${photoData.photo.id}_${photoData.photo.name || 'foto'}.jpg`;
 
       if (onProgress) {
         onProgress({
-          currentStep: `Conectando con Google Drive (${TARGET_DRIVE_ACCOUNT})...`,
+          currentStep: `Subiendo Foto ${i + 1} de ${allPhotos.length}`,
           totalFiles,
-          completedFiles: 0,
-          currentFileName: 'Carpeta Principal SERVILEC',
+          completedFiles: completedFiles + 1,
+          currentFileName: photoName,
           isComplete: false,
         });
       }
 
-      // 1. Find or create root folder "INSTALACIONES SERVILEC"
-      const rootFolder = await findOrCreateFolder('INSTALACIONES SERVILEC', undefined, activeToken);
-
-      // 2. Create Project Subfolder with format: "nombre cliente_direccion_fecha"
-      const { formattedName } = buildInspectionBaseFileName(inspection);
-      const projectFolderName = formattedName;
-
-      const projectFolder = await createDriveFolder(projectFolderName, rootFolder.id, activeToken);
-
-      // 3. Upload PDF Report formatted as: "nombre cliente_direccion_fecha.pdf"
-      const pdfFileName = `${formattedName}.pdf`;
-
-      if (onProgress) {
-        onProgress({
-          currentStep: 'Subiendo Reporte PDF...',
-          totalFiles,
-          completedFiles: 1,
-          currentFileName: pdfFileName,
-          isComplete: false,
-        });
-      }
-
-      await uploadFileToDrive(pdfBlob, pdfFileName, 'application/pdf', projectFolder.id, activeToken);
-      completedFiles = 1;
-
-      // 4. Create Subfolder "Fotos_Inspeccion_TE4" for photos if any photos exist
-      if (allPhotos.length > 0) {
-        const photosFolder = await createDriveFolder('Fotos_Inspeccion_TE4', projectFolder.id, activeToken);
-
-        for (let i = 0; i < allPhotos.length; i++) {
-          const photoData = allPhotos[i];
-          const photoName = `Item_${photoData.itemCode}_${photoData.photo.id}_${photoData.photo.name || 'foto'}.jpg`;
-
-          if (onProgress) {
-            onProgress({
-              currentStep: `Subiendo Foto ${i + 1} de ${allPhotos.length}`,
-              totalFiles,
-              completedFiles: completedFiles + 1,
-              currentFileName: photoName,
-              isComplete: false,
-            });
-          }
-
-          await uploadFileToDrive(photoData.photo.url, photoName, 'image/jpeg', photosFolder.id, activeToken);
-          completedFiles++;
-        }
-      }
-
-      const finalUrl = projectFolder.webViewLink || `https://drive.google.com/drive/folders/${projectFolder.id}`;
-
-      if (onProgress) {
-        onProgress({
-          currentStep: `¡Carga exitosa a Google Drive (${TARGET_DRIVE_ACCOUNT})!`,
-          totalFiles,
-          completedFiles: totalFiles,
-          currentFileName: 'Archivos respaldados correctamente',
-          isComplete: true,
-          driveFolderUrl: finalUrl,
-        });
-      }
-
-      return {
-        folderId: projectFolder.id,
-        folderUrl: finalUrl,
-      };
-    } catch (clientErr) {
-      console.warn('Client direct Drive upload encountered error, falling back to server route:', clientErr);
-      return executeServerFallbackUpload();
+      await uploadFileToDrive(photoData.photo.url, photoName, 'image/jpeg', photosFolder.id, activeToken);
+      completedFiles++;
     }
   }
 
-  // If no activeToken is present, seamlessly upload via server route without forcing popup login
-  return executeServerFallbackUpload();
+  const finalUrl = projectFolder.webViewLink || `https://drive.google.com/drive/folders/${projectFolder.id}`;
+
+  if (onProgress) {
+    onProgress({
+      currentStep: `¡Carga exitosa a Google Drive (${TARGET_DRIVE_ACCOUNT})!`,
+      totalFiles,
+      completedFiles: totalFiles,
+      currentFileName: 'Archivos respaldados correctamente en Drive',
+      isComplete: true,
+      driveFolderUrl: finalUrl,
+    });
+  }
+
+  return {
+    folderId: projectFolder.id,
+    folderUrl: finalUrl,
+  };
 }
 
 /**

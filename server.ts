@@ -137,14 +137,27 @@ async function startServer() {
                 parents: [driveFolderId],
               };
 
-              const formData = new FormData();
-              formData.append('metadata', new Blob([JSON.stringify(pdfMeta)], { type: 'application/json' }));
-              formData.append('file', new Blob([pdfBuffer], { type: 'application/pdf' }));
+              const boundary = 'foo_bar_baz_srv_boundary';
+              const delimiter = `\r\n--${boundary}\r\n`;
+              const closeDelimiter = `\r\n--${boundary}--`;
+
+              const metadataPart = `${delimiter}Content-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(pdfMeta)}`;
+              const mediaPartHeader = `${delimiter}Content-Type: application/pdf\r\n\r\n`;
+
+              const multipartBody = new Blob([
+                metadataPart,
+                mediaPartHeader,
+                new Blob([pdfBuffer], { type: 'application/pdf' }),
+                closeDelimiter
+              ], { type: `multipart/related; boundary=${boundary}` });
 
               await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
                 method: 'POST',
-                headers: { Authorization: `Bearer ${effectiveToken}` },
-                body: formData,
+                headers: {
+                  Authorization: `Bearer ${effectiveToken}`,
+                  'Content-Type': `multipart/related; boundary=${boundary}`,
+                },
+                body: multipartBody,
               });
             }
           }
