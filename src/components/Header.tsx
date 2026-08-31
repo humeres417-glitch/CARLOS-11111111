@@ -1,5 +1,5 @@
 import React from 'react';
-import { HardDrive, FileText, RotateCcw, History, TrendingDown, Zap } from 'lucide-react';
+import { HardDrive, FileText, RotateCcw, History, TrendingDown, Zap, Cpu } from 'lucide-react';
 
 interface HeaderProps {
   driveConnected: boolean;
@@ -10,6 +10,7 @@ interface HeaderProps {
   onNewInspection: () => void;
   onOpenVoltageDrop?: () => void;
   onOpenAndroidInstall?: () => void;
+  onOpenEquipmentCatalog?: () => void;
   completedItemsCount: number;
   totalItemsCount: number;
   photosCount: number;
@@ -24,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
   onNewInspection,
   onOpenVoltageDrop,
   onOpenAndroidInstall,
+  onOpenEquipmentCatalog,
   completedItemsCount,
   totalItemsCount,
   photosCount,
@@ -58,6 +60,19 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          {/* Equipment Catalog Button */}
+          {onOpenEquipmentCatalog && (
+            <button
+              id="btn-header-equipment-catalog"
+              onClick={onOpenEquipmentCatalog}
+              className="px-3.5 py-1.5 rounded-full border border-[#15803D]/40 bg-emerald-50 text-[#14532D] hover:bg-emerald-100 text-[11px] uppercase tracking-wider font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              title="Gestor de Fichas Técnicas de Módulos Fotovoltaicos e Inversores"
+            >
+              <Cpu className="w-3.5 h-3.5 text-[#15803D]" />
+              <span>Fichas Técnicas</span>
+            </button>
+          )}
+
           {/* Voltage Drop Calculator Button */}
           {onOpenVoltageDrop && (
             <button

@@ -4,6 +4,25 @@ export type SystemType = 'On-Grid (Netbilling)' | 'Off-Grid (Aislado)' | 'Híbri
 
 export type ItemStatus = 'C' | 'NC' | 'NA' | 'PENDIENTE';
 
+export type StructureType =
+  | 'Coplanar'
+  | 'Telescópicas para dar inclinación'
+  | 'A piso monoposte'
+  | 'A piso biposte'
+  | 'Carport solar'
+  | 'Otra';
+
+export type RoofType =
+  | 'Zinc 5V / PV4 (Trapezoidal)'
+  | 'Zinc Ondulado'
+  | 'Teja Chilena (Arcilla)'
+  | 'Teja Colonial / Cemento'
+  | 'Teja Asfáltica'
+  | 'Panel Sándwich / Isopol'
+  | 'Losa de Hormigón'
+  | 'Estructura Metálica / Perfilería'
+  | 'Otro tipo de techo';
+
 export interface PhotoItem {
   id: string;
   url: string; // base64 or blob URL
@@ -80,16 +99,19 @@ export interface StringConfigItem {
 
 export interface TechnicalInfo {
   systemType: SystemType;
-  installedPowerKwp: string;
+  installedPowerKwp: string; // Potencia nominal del inversor seleccionado (kW)
   inverterBrandModel: string;
   inverterSerialNumber: string;
   panelsCountAndPower: string;
+  structureType?: string; // Coplanar, Telescópicas para dar inclinación, A piso monoposte, A piso biposte, Carport solar, Otra
+  roofType?: string;      // Zinc 5V, Zinc Ondulado, Teja Chilena, Teja Asfáltica, Panel Sándwich, Losa de Hormigón, etc.
+  customStructureNote?: string; // Detalle si es estructura personalizada
   batteryInfo?: string;
   batteryBrand?: string;
   batteryModel?: string;
   batteryCount?: number;
   batteryTotalKwh?: string;
-  groundingResistanceOhm: string;
+  groundingResistanceOhm?: string;
   gpsCoordinates?: string;
   inspectionDate: string;
   distributionCompany?: string;

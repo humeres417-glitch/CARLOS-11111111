@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import { Inspection, PhotoItem } from '../types';
 import { getApplicableCategories } from './powerHelper';
+import { parseInverterSpecs } from '../data/inverterCatalog';
 
 interface PreparedPdfImage {
   dataUrl: string;
@@ -213,7 +214,7 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(210, 220, 230);
-  doc.text('Normativa SEC Chile - Pliegos Técnicos RPTD N°01 a N°19 / Ley 20.571', margin + 5, y + 17);
+  doc.text('Normativa SEC Chile - Instalaciones Fotovoltaicas / Ley 20.571 y 21.118', margin + 5, y + 17);
 
   // Red SEC Badge
   const badgeWidth = 32;
@@ -312,8 +313,41 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   const sec2Col1X = margin + 4;
   const sec2Col2X = margin + 96;
 
-  const rawPower = inspection.technical.installedPowerKwp || 'N/A';
-  const displayPower = rawPower !== 'N/A' && !rawPower.toLowerCase().includes('kw') ? `${rawPower} kW` : rawPower;
+  // Potencia Instalada (kW) = Potencia nominal del inversor seleccionado
+  let displayPower = 'N/A';
+  if (inspection.technical.inverterNominalPowerKw && inspection.technical.inverterNominalPowerKw > 0) {
+    displayPower = `${inspection.technical.inverterNominalPowerKw.toFixed(1)} kW`;
+  } else if (inspection.technical.inverterBrandModel) {
+    const invSpecs = parseInverterSpecs(inspection.technical.inverterBrandModel);
+    if (invSpecs && invSpecs.nominalPowerKw > 0) {
+      displayPower = `${invSpecs.nominalPowerKw.toFixed(1)} kW`;
+    }
+  } else if (inspection.technical.installedPowerKwp) {
+    const rawPower = inspection.technical.installedPowerKwp;
+    displayPower = !rawPower.toLowerCase().includes('kw') ? `${rawPower} kW` : rawPower;
+  }
+
+  // Tipo de Estructura de Montaje y Tipo de Techo
+  let displayStructure = 'Coplanar sobre techo';
+  if (inspection.technical.structureType) {
+    const st = inspection.technical.structureType;
+    if (st === 'Coplanar' || st.toLowerCase().includes('coplanar')) {
+      displayStructure = inspection.technical.roofType ? `Coplanar (${inspection.technical.roofType})` : 'Coplanar sobre techo';
+    } else if (st.toLowerCase().includes('telesc') || st.toLowerCase().includes('inclinaci')) {
+      displayStructure = inspection.technical.roofType ? `Telescópica inclinada (${inspection.technical.roofType})` : 'Telescópicas para dar inclinación';
+    } else if (st.toLowerCase().includes('monoposte')) {
+      displayStructure = 'A piso monoposte';
+    } else if (st.toLowerCase().includes('biposte')) {
+      displayStructure = 'A piso biposte';
+    } else if (st.toLowerCase().includes('carport') || st.toLowerCase().includes('calport')) {
+      displayStructure = 'Carport solar';
+    } else if (st === 'Otra' || st.toLowerCase().includes('otra')) {
+      displayStructure = inspection.technical.customStructureNote ? `Otra (${inspection.technical.customStructureNote})` : 'Otra estructura';
+    } else {
+      displayStructure = inspection.technical.roofType ? `${st} (${inspection.technical.roofType})` : st;
+    }
+  }
+
   const mpptStr = inspection.technical.mpptCount 
     ? `${inspection.technical.mpptCount} MPPT | ${inspection.technical.stringsCount || 'N/A'} Str | ${inspection.technical.panelsPerString || 'N/A'} Pan`
     : `${inspection.technical.stringsCount || 'N/A'} Str | ${inspection.technical.panelsPerString || 'N/A'} Pan`;
@@ -321,23 +355,23 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   const specRows = [
     {
       col1: { label: 'Tipo de Sistema:', val: inspection.technical.systemType || 'On-Grid (Netbilling)', valWidth: 52 },
-      col2: { label: 'Potencia Instalada:', val: displayPower, valWidth: 52 }
+      col2: { label: 'Potencia Inversor:', val: displayPower, valWidth: 52 }
     },
     {
       col1: { label: 'Módulos Paneles:', val: inspection.technical.panelsCountAndPower || 'N/A', valWidth: 52 },
       col2: { label: 'Inversor Marca/Mod:', val: inspection.technical.inverterBrandModel || 'N/A', valWidth: 52 }
     },
     {
-      col1: { label: 'N° Serie Inversor:', val: inspection.technical.inverterSerialNumber || 'N/A', valWidth: 52 },
-      col2: { label: 'Resistencia Tierra:', val: `${inspection.technical.groundingResistanceOhm || '< 20'} Ω`, valWidth: 52 }
+      col1: { label: 'Tipo Estructura:', val: displayStructure, valWidth: 52 },
+      col2: { label: 'Config. Strings/MPPT:', val: mpptStr, valWidth: 52 }
     },
     {
-      col1: { label: 'Config. Strings/MPPT:', val: mpptStr, valWidth: 52 },
-      col2: { label: 'Baterías / Litio:', val: inspection.technical.batteryInfo || 'Sin Baterías', valWidth: 52 }
+      col1: { label: 'Baterías / Litio:', val: inspection.technical.batteryInfo || 'Sin Baterías', valWidth: 52 },
+      col2: { label: 'Empresa Distribuidora:', val: inspection.technical.distributionCompany || 'Enel / CGE / Chilquinta', valWidth: 52 }
     },
     {
-      col1: { label: 'Empresa Distribuidora:', val: inspection.technical.distributionCompany || 'Enel / CGE / Chilquinta', valWidth: 52 },
-      col2: { label: 'Fecha Inspección:', val: inspection.technical.inspectionDate || new Date().toISOString().slice(0, 10), valWidth: 52 }
+      col1: { label: 'Fecha Inspección:', val: inspection.technical.inspectionDate || new Date().toISOString().slice(0, 10), valWidth: 52 },
+      col2: { label: 'Estado Declaración:', val: 'Listo para TE4 SEC', valWidth: 52 }
     }
   ];
 
@@ -508,7 +542,7 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-  doc.text('3. CHECKLIST NORMATIVO DE INSPECCIÓN TE4 SEC', margin, y);
+  doc.text('3. CHECKLIST DE INSPECCIÓN TÉCNICA TE4 SEC', margin, y);
 
   y += 4;
 
@@ -520,7 +554,7 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   doc.setFontSize(8);
   doc.setTextColor(255, 255, 255);
   doc.text('Cód.', margin + 2, y + 5);
-  doc.text('Ítem de Inspección y Referencia SEC', margin + 14, y + 5);
+  doc.text('Ítem de Inspección y Parámetro Evaluado', margin + 14, y + 5);
   doc.text('Estado', margin + 133.5, y + 5, { align: 'center' });
   doc.text('Fotos', margin + 154, y + 5, { align: 'center' });
   doc.text('Obs.', margin + 173, y + 5, { align: 'center' });
@@ -610,7 +644,7 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   // -------------------------------------------------------------
   // SECTION 4: OBSERVACIONES Y CONCLUSIÓN TÉCNICA
   // -------------------------------------------------------------
-  const generalObs = inspection.generalNotes || 'La instalación cumple con todos los parámetros exigidos por los pliegos técnicos normativos RPTD / RIC de la SEC para la tramitación de la Declaración TE4.';
+  const generalObs = inspection.generalNotes || 'La instalación cumple con todos los parámetros técnicos y de seguridad exigidos por la normativa de la SEC para la tramitación de la Declaración TE4.';
   const splitObs = doc.splitTextToSize(generalObs, contentWidth - 8);
   const obsBoxHeight = Math.max(22, 10 + splitObs.length * 4);
 
@@ -780,14 +814,8 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
       doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
-      const cleanItemTitle = item.title.length > 30 ? item.title.slice(0, 28) + '..' : item.title;
-      doc.text(cleanItemTitle, posX + 18, y + 6.3, { maxWidth: cardWidth - 38 });
-
-      // Norma badge on right
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6.5);
-      doc.setTextColor(21, 128, 61);
-      doc.text(item.normaSec, posX + cardWidth - 3.5, y + 6.2, { align: 'right' });
+      const cleanItemTitle = item.title.length > 38 ? item.title.slice(0, 36) + '..' : item.title;
+      doc.text(cleanItemTitle, posX + 18, y + 6.3, { maxWidth: cardWidth - 22 });
 
       // Photo Container Box Dimensions
       const boxW = cardWidth - 6; // 81 mm

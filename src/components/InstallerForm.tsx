@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   User,
   MapPin,
@@ -30,7 +30,8 @@ import {
 import { InstallerInfo, ClientInfo, TechnicalInfo, SystemType, StringConfigItem } from '../types';
 import { getStoredInstallers, saveStoredInstallers } from '../data/defaultInstallers';
 import { InstallersPlanillaModal } from './InstallersPlanillaModal';
-import { getPvModuleSpecs } from '../data/pvModuleCatalog';
+import { EquipmentCatalogModal } from './EquipmentCatalogModal';
+import { getPvModuleSpecs, getAllPvBrandsList, getPvModelsForBrand, PvModuleElectricalSpecs } from '../data/pvModuleCatalog';
 import { parseInverterSpecs } from '../data/inverterCatalog';
 import { computeStringElectricals, computeAcFeederElectricals } from '../utils/voltageDropHelpers';
 
@@ -58,6 +59,27 @@ const CHILEAN_DISTRIBUTION_COMPANIES = [
   'Otra / Personalizado'
 ];
 
+export const STRUCTURE_OPTIONS = [
+  { value: 'Coplanar', label: 'Coplanar sobre techo', desc: 'Módulos en el mismo plano de la cubierta' },
+  { value: 'Telescópicas para dar inclinación', label: 'Telescópicas para dar inclinación', desc: 'Estructuras triangulares para dar pendiente' },
+  { value: 'A piso monoposte', label: 'A piso monoposte', desc: 'Estructura a suelo con 1 pilar central' },
+  { value: 'A piso biposte', label: 'A piso biposte', desc: 'Estructura a suelo biposte de alta resistencia' },
+  { value: 'Carport solar', label: 'Carport solar (Estacionamiento)', desc: 'Pérgola / Cobertizo solar para vehículos' },
+  { value: 'Otra', label: 'Otra estructura...', desc: 'Estructura personalizada o especial' },
+];
+
+export const ROOF_TYPES = [
+  'Zinc 5V / PV4 (Trapezoidal)',
+  'Zinc Ondulado',
+  'Teja Chilena (Arcilla)',
+  'Teja Colonial / Cemento',
+  'Teja Asfáltica',
+  'Panel Sándwich / Isopol',
+  'Losa de Hormigón',
+  'Estructura Metálica / Perfilería',
+  'Otro tipo de techo'
+];
+
 interface InstallerFormProps {
   installer: InstallerInfo;
   client: ClientInfo;
@@ -82,143 +104,41 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
   const [isOpen, setIsOpen] = useState(true);
   const [isFetchingGps, setIsFetchingGps] = useState(false);
   const [gpsMessage, setGpsMessage] = useState<string | null>(null);
+  const [isEquipmentCatalogOpen, setIsEquipmentCatalogOpen] = useState(false);
 
-  const [pvBrandsList, setPvBrandsList] = useState<string[]>([
-    'Jinko Solar',
-    'Canadian Solar',
-    'LONGi Solar',
-    'JA Solar',
-    'Risen Energy',
-    'Astronergy (Chint)',
-    'DAH Solar',
-    'Anhui Solar',
-    'Ulica Solar',
-    'Otra Marca (Certificada SEC)'
-  ]);
+  const getInitialBrandsAndModels = () => {
+    const brands = getAllPvBrandsList();
+    const modelsMap: Record<string, string[]> = {};
+    brands.forEach(b => {
+      modelsMap[b] = getPvModelsForBrand(b);
+    });
+    return { brands, modelsMap };
+  };
 
-  const [pvModelsMap, setPvModelsMap] = useState<Record<string, string[]>>({
-    'Jinko Solar': [
-      'JKM550M-72HL4 550W Mono PERC Half-Cell',
-      'JKM555M-72HL4 555W Mono PERC Half-Cell',
-      'JKM560M-72HL4 560W Mono PERC Half-Cell',
-      'JKM565M-72HL4-V 565W Mono PERC 1500V',
-      'JKM570M-72HL4-V 570W Mono PERC 1500V',
-      'JKM575M-72HL4-V 575W Mono PERC 1500V',
-      'JKM580M-72HL4-V 580W Mono PERC 1500V',
-      'Tiger Neo N-type JKM585N-72HL4-V',
-      'Tiger Neo N-type JKM590N-72HL4-V',
-      'Tiger Neo N-type JKM595N-72HL4-V',
-      'Tiger Neo N-type JKM600N-72HL4-V',
-      'Tiger Neo N-type JKM615N-78HL4-V',
-      'Tiger Neo N-type JKM620N-78HL4-V',
-      'Tiger Neo N-type JKM625N-78HL4-V',
-      'Tiger Neo N-type JKM630N-78HL4-V',
-      'Otro Modelo Jinko Solar'
-    ],
-    'Canadian Solar': [
-      'HiKu6 CS6W-545MS',
-      'HiKu6 CS6W-550MS',
-      'HiKu6 CS6W-555MS',
-      'CS6W-585T',
-      'CS6.2-66TB-615',
-      'CS6.2-66TB-620 (620W TOPCon Bifacial)',
-      'LR7-72HVH-640M',
-      'BiHiKu6 CS6W-540MB-AG',
-      'BiHiKu6 CS6W-550MB-AG',
-      'BiHiKu6 CS6W-555MB-AG',
-      'HiKu7 CS7N-650MS',
-      'HiKu7 CS7N-655MS',
-      'HiKu7 CS7N-660MS',
-      'HiKu7 CS7N-670MS',
-      'BiHiKu7 CS7N-665TB-AG',
-      'BiHiKu7 CS7N-690TB-AG',
-      'Otro Modelo Canadian Solar'
-    ],
-    'LONGi Solar': [
-      'LR5-72HPH-550M',
-      'LR5-72HPH-555M',
-      'LR5-72HTH-565M',
-      'LR5-72HTH-570M',
-      'LR5-72HTH-575M',
-      'LR5-72HTH-580M',
-      'LR5-72HGB-590M',
-      'LR5-72HGB-600M',
-      'LR8-66HGD-615M',
-      'LR8-66HGD-620M',
-      'LR8-66HGD-625M',
-      'LR7-72HVH-640M',
-      'Otro Modelo LONGi Solar'
-    ],
-    'JA Solar': [
-      'JAM72S30-540/MR',
-      'JAM72S30-545/MR',
-      'JAM72S30-550/MR',
-      'JAM72S30-555/MR',
-      'JAM72S30-560/MR',
-      'JAM72D30-540/MB',
-      'JAM72D30-550/MB',
-      'JAM72D40-570/GB',
-      'JAM72D40-580/GB',
-      'JAM72D42-620/LB',
-      'Otro Modelo JA Solar'
-    ],
-    'Risen Energy': [
-      'Titan RSM110-8-535M',
-      'Titan RSM110-8-540M',
-      'Titan RSM110-8-545M',
-      'Titan RSM110-8-550M',
-      'Titan RSM110-8-555M',
-      'Titan RSM130-8-650M',
-      'Titan RSM130-8-660M',
-      'Titan HJT Hyper-ion RSM110-8-700H',
-      'Otro Modelo Risen Energy'
-    ],
-    'Astronergy (Chint)': [
-      'CHSM54M-HC 410W',
-      'CHSM54M-HC 415W',
-      'CHSM72M-HC 540W',
-      'CHSM72M-HC 545W',
-      'CHSM72M-HC 550W',
-      'CHSM72M-HC 555W',
-      'Astro N5 CHSM72N(DG)/F-BH 570W',
-      'Astro N5 CHSM72N(DG)/F-BH 580W',
-      'Otro Modelo Astronergy'
-    ],
-    'DAH Solar': [
-      'DHN-72X16/FS-550W',
-      'DHN-72X16/FS-555W',
-      'DHN-72X16/FS-560W',
-      'DHN-72X16/DG-585W',
-      'Otro Modelo DAH Solar'
-    ],
-    'Anhui Solar': [
-      'PF620M-SN',
-      'PF625BC-SN',
-      'PF630M-SN',
-      'PF635BC-SN',
-      'PF640M-SN',
-      'PF645BC-SN',
-      'Otro Modelo Anhui Solar'
-    ],
-    'Ulica Solar': [
-      'UL-540M-144HV 540W Mono PERC',
-      'UL-545M-144HV 545W Mono PERC',
-      'UL-550M-144HV 550W Mono PERC',
-      'UL-555M-144HV 555W Mono PERC',
-      'UL-580M-144HV 580W N-type TOPCon',
-      'UL-585M-144HV 585W N-type TOPCon',
-      'UL-590M-144HV 590W N-type TOPCon',
-      'Otro Modelo Ulica Solar'
-    ],
-    'Otra Marca (Certificada SEC)': [
-      'Panel Fotovoltaico Monocristalino 400W - 450W',
-      'Panel Fotovoltaico Monocristalino 500W - 550W',
-      'Panel Fotovoltaico Monocristalino 550W - 600W',
-      'Panel Fotovoltaico N-Type TOPCon 600W - 650W',
-      'Panel Fotovoltaico Bifacial N-Type 650W - 700W',
-      'Panel Fotovoltaico Personalizado'
-    ]
-  });
+  const initialCatalog = getInitialBrandsAndModels();
+  const [pvBrandsList, setPvBrandsList] = useState<string[]>(initialCatalog.brands);
+  const [pvModelsMap, setPvModelsMap] = useState<Record<string, string[]>>(initialCatalog.modelsMap);
+
+  const refreshCatalogState = () => {
+    const brands = getAllPvBrandsList();
+    setPvBrandsList(brands);
+    const modelsMap: Record<string, string[]> = {};
+    brands.forEach(b => {
+      modelsMap[b] = getPvModelsForBrand(b);
+    });
+    setPvModelsMap(modelsMap);
+  };
+
+  useEffect(() => {
+    refreshCatalogState();
+    const handleCatalogUpdate = () => {
+      refreshCatalogState();
+    };
+    window.addEventListener('pv_catalog_updated', handleCatalogUpdate);
+    return () => {
+      window.removeEventListener('pv_catalog_updated', handleCatalogUpdate);
+    };
+  }, []);
 
   const [isAddingCustomPanel, setIsAddingCustomPanel] = useState(false);
   const [customPanelBrand, setCustomPanelBrand] = useState('');
@@ -761,6 +681,34 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
     return { info, totalKwhStr };
   };
 
+  const handleSelectModuleFromCatalog = (mod: PvModuleElectricalSpecs) => {
+    const brand = mod.brand;
+    const model = mod.model;
+    const fullStr = `${brand} - ${model}`;
+    const currentConfigs = getStringConfigList();
+    const updatedConfigs = currentConfigs.map(c => computeStringElectricals({
+      ...c,
+      panelBrand: brand,
+      panelModel: model,
+      panelWatts: mod.pMaxWatts,
+      vmpModule: mod.vmp,
+      impModule: mod.imp,
+      vocModule: mod.voc,
+      iscModule: mod.isc
+    }, true));
+    const counts = updatedConfigs.map(c => c.panelsCount);
+    const summary = formatPanelsSummaryFromConfigs(updatedConfigs);
+
+    onChangeTechnical({
+      ...technical,
+      panelsCountAndPower: fullStr,
+      stringConfigs: updatedConfigs,
+      stringPanelCounts: counts,
+      panelsPerString: summary || technical.panelsPerString
+    });
+    refreshCatalogState();
+  };
+
   const handleSaveCustomPanel = () => {
     const brandToUse = isCustomBrand ? newCustomBrandInput.trim() : customPanelBrand.trim();
     const modelToUse = customPanelModelName.trim();
@@ -806,14 +754,19 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
     });
 
     const fullStr = `${brandToUse} - ${formattedModel}`;
+    const specs = getPvModuleSpecs(brandToUse, formattedModel, wattsToUse);
 
     const currentConfigs = getStringConfigList();
-    const updatedConfigs = currentConfigs.map(c => ({
+    const updatedConfigs = currentConfigs.map(c => computeStringElectricals({
       ...c,
       panelBrand: brandToUse,
       panelModel: formattedModel,
-      panelWatts: wattsToUse
-    }));
+      panelWatts: wattsToUse,
+      vmpModule: specs.vmp,
+      impModule: specs.imp,
+      vocModule: specs.voc,
+      iscModule: specs.isc,
+    }, true));
     const updatedSummary = formatPanelsSummaryFromConfigs(updatedConfigs);
 
     onChangeTechnical({
@@ -1794,6 +1747,147 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
               </div>
 
               <div>
+                <label className="block text-[9px] uppercase tracking-wider font-semibold text-[#15803D] mb-0.5">
+                  Potencia Instalada Inversor (kW) *
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.5"
+                    max="500"
+                    id="input-installed-power-kw"
+                    value={
+                      technical.installedPowerKwp
+                        ? technical.installedPowerKwp.replace(/[^\d.]/g, '')
+                        : (technical.inverterNominalPowerKw ? technical.inverterNominalPowerKw.toFixed(1) : '5.0')
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const num = parseFloat(val) || 0;
+                      const updated = {
+                        ...technical,
+                        installedPowerKwp: val,
+                        inverterNominalPowerKw: num > 0 ? num : technical.inverterNominalPowerKw,
+                      };
+                      const feeder = computeAcFeederElectricals(updated);
+                      onChangeTechnical({
+                        ...updated,
+                        inverterAcDeltaV: feeder.deltaV,
+                        inverterAcDeltaVPercent: feeder.deltaVPercent,
+                        inverterAcCurrent: feeder.currentAmperes,
+                        inverterAcVoltageAtTerminals: feeder.vAtTerminals,
+                        inverterAcComplianceStatus: feeder.complianceStatus,
+                      });
+                    }}
+                    placeholder="Ej. 5.0"
+                    className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/40 text-xs font-bold text-[#14532D] focus:bg-white focus:border-[#15803D] focus:outline-none"
+                  />
+                  <span className="text-[11px] font-mono font-bold text-[#15803D] pr-1">kW</span>
+                </div>
+                <p className="text-[8.5px] text-[#15803D]/80 mt-0.5">
+                  * Potencia nominal del inversor seleccionado (SEC TE4)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                  N° Serie Inversor (S/N)
+                </label>
+                <input
+                  type="text"
+                  id="input-inverter-serial-number"
+                  value={technical.inverterSerialNumber || ''}
+                  onChange={(e) => onChangeTechnical({ ...technical, inverterSerialNumber: e.target.value })}
+                  placeholder="Ej. 210107456810M2001234"
+                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                  Marca Inversor *
+                </label>
+                <select
+                  id="select-inverter-brand"
+                  value={currentInverterBrand}
+                  onChange={(e) => {
+                    const newBrand = e.target.value;
+                    if (!newBrand) {
+                      onChangeTechnical({ ...technical, inverterBrandModel: '' });
+                    } else {
+                      const firstModel = secInverterModels[newBrand]?.[0] || '';
+                      const fullStr = firstModel ? `${newBrand} - ${firstModel}` : newBrand;
+                      const invSpecs = parseInverterSpecs(fullStr);
+                      const updated = {
+                        ...technical,
+                        inverterBrandModel: fullStr,
+                        inverterNominalPowerKw: invSpecs.nominalPowerKw,
+                        inverterAcSystemType: invSpecs.systemType,
+                        installedPowerKwp: invSpecs.nominalPowerKw > 0 ? invSpecs.nominalPowerKw.toFixed(1) : technical.installedPowerKwp,
+                      };
+                      const feeder = computeAcFeederElectricals(updated);
+                      onChangeTechnical({
+                        ...updated,
+                        inverterAcDeltaV: feeder.deltaV,
+                        inverterAcDeltaVPercent: feeder.deltaVPercent,
+                        inverterAcCurrent: feeder.currentAmperes,
+                        inverterAcVoltageAtTerminals: feeder.vAtTerminals,
+                        inverterAcComplianceStatus: feeder.complianceStatus,
+                      });
+                    }
+                  }}
+                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer font-medium"
+                >
+                  <option value="">Seleccione Marca Inversor (Certificado / Off-Grid)...</option>
+                  {secCertifiedInverterBrands.map((brand) => (
+                    <option key={brand} value={brand}>{brand}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
+                  Modelo Inversor *
+                </label>
+                <select
+                  id="select-inverter-model"
+                  value={currentInverterModel}
+                  disabled={!currentInverterBrand}
+                  onChange={(e) => {
+                    const newModel = e.target.value;
+                    const brandPrefix = currentInverterBrand || '';
+                    const fullStr = newModel ? `${brandPrefix} - ${newModel}` : brandPrefix;
+                    const invSpecs = parseInverterSpecs(fullStr);
+                    const updated = {
+                      ...technical,
+                      inverterBrandModel: fullStr,
+                      inverterNominalPowerKw: invSpecs.nominalPowerKw,
+                      inverterAcSystemType: invSpecs.systemType,
+                      installedPowerKwp: invSpecs.nominalPowerKw > 0 ? invSpecs.nominalPowerKw.toFixed(1) : technical.installedPowerKwp,
+                    };
+                    const feeder = computeAcFeederElectricals(updated);
+                    onChangeTechnical({
+                      ...updated,
+                      inverterAcDeltaV: feeder.deltaV,
+                      inverterAcDeltaVPercent: feeder.deltaVPercent,
+                      inverterAcCurrent: feeder.currentAmperes,
+                      inverterAcVoltageAtTerminals: feeder.vAtTerminals,
+                      inverterAcComplianceStatus: feeder.complianceStatus,
+                    });
+                  }}
+                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                >
+                  <option value="">
+                    {currentInverterBrand ? 'Seleccione Modelo...' : 'Primero seleccione marca...'}
+                  </option>
+                  {availableInverterModels.map((model) => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <div className="flex items-center justify-between mb-0.5">
                   <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70">
                     Marca Panel Fotovoltaico *
@@ -1901,85 +1995,98 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                 </select>
               </div>
 
-              <div>
-                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
-                  Marca Inversor *
-                </label>
-                <select
-                  id="select-inverter-brand"
-                  value={currentInverterBrand}
-                  onChange={(e) => {
-                    const newBrand = e.target.value;
-                    if (!newBrand) {
-                      onChangeTechnical({ ...technical, inverterBrandModel: '' });
-                    } else {
-                      const firstModel = secInverterModels[newBrand]?.[0] || '';
-                      const fullStr = firstModel ? `${newBrand} - ${firstModel}` : newBrand;
-                      const invSpecs = parseInverterSpecs(fullStr);
-                      const updated = {
-                        ...technical,
-                        inverterBrandModel: fullStr,
-                        inverterNominalPowerKw: invSpecs.nominalPowerKw,
-                        inverterAcSystemType: invSpecs.systemType,
-                      };
-                      const feeder = computeAcFeederElectricals(updated);
-                      onChangeTechnical({
-                        ...updated,
-                        inverterAcDeltaV: feeder.deltaV,
-                        inverterAcDeltaVPercent: feeder.deltaVPercent,
-                        inverterAcCurrent: feeder.currentAmperes,
-                        inverterAcVoltageAtTerminals: feeder.vAtTerminals,
-                        inverterAcComplianceStatus: feeder.complianceStatus,
-                      });
-                    }
-                  }}
-                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer font-medium"
-                >
-                  <option value="">Seleccione Marca Inversor (Certificado / Off-Grid)...</option>
-                  {secCertifiedInverterBrands.map((brand) => (
-                    <option key={brand} value={brand}>{brand}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Selección de Estructura de Montaje y Tipo de Techo (RIC N°02 & RIC N°19) */}
+              <div className="sm:col-span-2 md:col-span-4 bg-[#F8FAF9] p-3 border border-[#15803D]/30 rounded-xs space-y-2.5 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#15803D]/20 pb-1.5 gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1 rounded-2xs bg-[#15803D] text-white">
+                      <Layers className="w-3.5 h-3.5" />
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-bold text-[#14532D] flex items-center gap-1.5">
+                        Tipo de Estructura de Montaje y Cubierta *
+                      </h4>
+                      <p className="text-[10px] text-[#475569]">
+                        Seleccione el soporte estructural de los módulos y el tipo de techo correspondiente.
+                      </p>
+                    </div>
+                  </div>
+                </div>
 
-              <div>
-                <label className="block text-[9px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">
-                  Modelo Inversor *
-                </label>
-                <select
-                  id="select-inverter-model"
-                  value={currentInverterModel}
-                  disabled={!currentInverterBrand}
-                  onChange={(e) => {
-                    const newModel = e.target.value;
-                    const brandPrefix = currentInverterBrand || '';
-                    const fullStr = newModel ? `${brandPrefix} - ${newModel}` : brandPrefix;
-                    const invSpecs = parseInverterSpecs(fullStr);
-                    const updated = {
-                      ...technical,
-                      inverterBrandModel: fullStr,
-                      inverterNominalPowerKw: invSpecs.nominalPowerKw,
-                      inverterAcSystemType: invSpecs.systemType,
-                    };
-                    const feeder = computeAcFeederElectricals(updated);
-                    onChangeTechnical({
-                      ...updated,
-                      inverterAcDeltaV: feeder.deltaV,
-                      inverterAcDeltaVPercent: feeder.deltaVPercent,
-                      inverterAcCurrent: feeder.currentAmperes,
-                      inverterAcVoltageAtTerminals: feeder.vAtTerminals,
-                      inverterAcComplianceStatus: feeder.complianceStatus,
-                    });
-                  }}
-                  className="w-full px-2.5 py-1.5 bg-[#F8FAF9] border border-[#15803D]/30 text-xs text-[#0F172A] focus:bg-white focus:border-[#15803D] focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-                >
-                  <option value="">
-                    {currentInverterBrand ? 'Seleccione Modelo...' : 'Primero seleccione marca...'}
-                  </option>
-                  {availableInverterModels.map((model) => (
-                    <option key={model} value={model}>{model}</option>
-                  ))}
-                </select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 text-xs">
+                  <div>
+                    <label className="block text-[9px] uppercase tracking-wider font-semibold text-[#14532D] mb-1">
+                      Tipo de Estructura Instalada *
+                    </label>
+                    <select
+                      id="select-structure-type"
+                      value={technical.structureType || 'Coplanar'}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        onChangeTechnical({
+                          ...technical,
+                          structureType: val,
+                          roofType: (val === 'Coplanar' || val.includes('Telescópicas')) 
+                            ? (technical.roofType || 'Zinc 5V / PV4 (Trapezoidal)') 
+                            : technical.roofType
+                        });
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-white border border-[#15803D]/40 text-xs font-bold text-[#0F172A] focus:border-[#15803D] focus:outline-none cursor-pointer"
+                    >
+                      {STRUCTURE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] uppercase tracking-wider font-semibold text-[#14532D] mb-1">
+                      Tipo de Techo / Cubierta {(!technical.structureType || technical.structureType === 'Coplanar' || technical.structureType.includes('Telescópicas')) ? '*' : '(Opcional)'}
+                    </label>
+                    <select
+                      id="select-roof-type"
+                      value={technical.roofType || 'Zinc 5V / PV4 (Trapezoidal)'}
+                      onChange={(e) =>
+                        onChangeTechnical({
+                          ...technical,
+                          roofType: e.target.value,
+                        })
+                      }
+                      className="w-full px-2.5 py-1.5 bg-white border border-[#15803D]/40 text-xs font-medium text-[#0F172A] focus:border-[#15803D] focus:outline-none cursor-pointer"
+                    >
+                      {ROOF_TYPES.map((rt) => (
+                        <option key={rt} value={rt}>
+                          {rt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] uppercase tracking-wider font-semibold text-[#14532D] mb-1">
+                      Detalle Estructura / Observación
+                    </label>
+                    <input
+                      type="text"
+                      id="input-custom-structure-note"
+                      value={technical.customStructureNote || ''}
+                      onChange={(e) =>
+                        onChangeTechnical({
+                          ...technical,
+                          customStructureNote: e.target.value,
+                        })
+                      }
+                      placeholder={
+                        technical.structureType === 'Otra'
+                          ? 'Especifique tipo de estructura personalizada...'
+                          : 'Ej. Fijación con pernos pasantes a cerchas, etc.'
+                      }
+                      className="w-full px-2.5 py-1.5 bg-white border border-[#15803D]/40 text-xs text-[#0F172A] focus:border-[#15803D] focus:outline-none"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Alimentador AC Inversor -> TDFV / Empalme */}
@@ -2352,13 +2459,17 @@ export const InstallerForm: React.FC<InstallerFormProps> = ({
                         newConfigs.push(currentConfigs[i]);
                         newCounts.push(currentConfigs[i].panelsCount);
                       } else {
-                        newConfigs.push({
+                        const rawItem: StringConfigItem = {
                           stringIndex: i + 1,
                           panelsCount: 10,
                           panelBrand: defaultBrand,
                           panelModel: defaultModel,
-                          panelWatts: defaultWatts
-                        });
+                          panelWatts: defaultWatts,
+                          cableSectionMm2: 4,
+                          cableDistanceMeters: 25,
+                          operatingTempC: 70,
+                        };
+                        newConfigs.push(computeStringElectricals(rawItem));
                         newCounts.push(10);
                       }
                     }

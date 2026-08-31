@@ -11,13 +11,15 @@ import {
 /**
  * Calcula y completa automáticamente todos los parámetros eléctricos y caída de tensión DC para un string
  */
-export function computeStringElectricals(item: StringConfigItem): StringConfigItem {
+export function computeStringElectricals(item: StringConfigItem, forceCatalogSpecs: boolean = false): StringConfigItem {
   const specs = getPvModuleSpecs(item.panelBrand, item.panelModel, item.panelWatts);
   const pCount = item.panelsCount || 0;
-  const vmpMod = item.vmpModule || specs.vmp;
-  const impMod = item.impModule || specs.imp;
-  const vocMod = item.vocModule || specs.voc;
-  const iscMod = item.iscModule || specs.isc;
+  
+  // Use explicitly provided values if defined and not forced, otherwise use catalog specs
+  const vmpMod = !forceCatalogSpecs && item.vmpModule !== undefined ? item.vmpModule : specs.vmp;
+  const impMod = !forceCatalogSpecs && item.impModule !== undefined ? item.impModule : specs.imp;
+  const vocMod = !forceCatalogSpecs && item.vocModule !== undefined ? item.vocModule : specs.voc;
+  const iscMod = !forceCatalogSpecs && item.iscModule !== undefined ? item.iscModule : specs.isc;
 
   const cableDist = item.cableDistanceMeters !== undefined ? item.cableDistanceMeters : 25;
   const cableSec = item.cableSectionMm2 !== undefined ? item.cableSectionMm2 : 4;
