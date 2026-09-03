@@ -231,41 +231,25 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   y += 26;
 
   // -------------------------------------------------------------
-  // SECTION 1: DATOS GENERALES (Instalador & Cliente)
+  // SECTION 1: DATOS DEL INSTALADOR
   // -------------------------------------------------------------
   const sec1Col1X = margin + 4;
   const sec1Col2X = margin + 96;
 
-  const sec1Rows = [
-    {
-      col1: { label: 'Instalador SEC:', val: inspection.installer.name || 'N/A', valWidth: 54 },
-      col2: { label: 'RUT / Licencia:', val: `${inspection.installer.rut ? `RUT: ${inspection.installer.rut} | ` : ''}Lic. ${inspection.installer.secLicenceNumber || 'N/A'}`, valWidth: 54 }
-    },
-    {
-      col1: { label: 'Cliente / Propietario:', val: `${inspection.client.name || 'N/A'}${inspection.client.rut ? ` (RUT: ${inspection.client.rut})` : ''}`, valWidth: 54 },
-      col2: { label: 'Dirección:', val: `${inspection.client.address || 'N/A'}${inspection.client.comuna ? `, ${inspection.client.comuna}` : ''}`, valWidth: 54 }
-    },
-    {
-      col1: { label: 'Teléfono Contacto:', val: inspection.client.phone || 'N/A', valWidth: 54 },
-      col2: { label: 'Email:', val: inspection.client.email || 'N/A', valWidth: 54 }
-    }
-  ];
+  const installerName = inspection.installer.name || 'N/A';
+  const installerRut = inspection.installer.rut || 'N/A';
 
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
 
-  const sec1RowHeights = sec1Rows.map((row) => {
-    const lines1 = doc.splitTextToSize(row.col1.val, row.col1.valWidth).length;
-    const lines2 = doc.splitTextToSize(row.col2.val, row.col2.valWidth).length;
-    const maxLines = Math.max(1, lines1, lines2);
-    return (maxLines * 3.8) + 2.5;
-  });
+  const instNameLines = doc.splitTextToSize(installerName, 55).length;
+  const instRutLines = doc.splitTextToSize(installerRut, 55).length;
+  const instMaxLines = Math.max(1, instNameLines, instRutLines);
+  const instContentH = (instMaxLines * 3.8) + 2;
+  const sec1HeaderHeight = 8;
+  const sec1BoxHeight = sec1HeaderHeight + instContentH + 2;
 
-  const totalSec1ContentHeight = sec1RowHeights.reduce((sum, h) => sum + h, 0);
-  const sec1HeaderHeight = 9;
-  const sec1BoxHeight = sec1HeaderHeight + totalSec1ContentHeight + 2;
-
-  checkAddPage(sec1BoxHeight + 5);
+  checkAddPage(sec1BoxHeight + 4);
 
   doc.setFillColor(bgLight[0], bgLight[1], bgLight[2]);
   doc.setDrawColor(borderGray[0], borderGray[1], borderGray[2]);
@@ -273,45 +257,94 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   doc.roundedRect(margin, y, contentWidth, sec1BoxHeight, 2, 2, 'FD');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
+  doc.setFontSize(9);
   doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-  doc.text('1. INFORMACIÓN DEL INSTALADOR Y CLIENTE', margin + 4, y + 6);
+  doc.text('1. DATOS DEL INSTALADOR', margin + 4, y + 5.5);
 
-  let sec1RowY = y + sec1HeaderHeight + 2;
+  const instRowY = y + sec1HeaderHeight + 2;
 
-  sec1Rows.forEach((row, idx) => {
-    const rHeight = sec1RowHeights[idx];
+  // Col 1: Nombre Instalador
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+  doc.text('Nombre Instalador:', sec1Col1X, instRowY);
 
-    // Col 1
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-    doc.text(row.col1.label, sec1Col1X, sec1RowY);
+  const instLbl1Width = doc.getTextWidth('Nombre Instalador:') + 2.5;
+  doc.setFont('helvetica', 'normal');
+  const splitInst1 = doc.splitTextToSize(installerName, 55);
+  doc.text(splitInst1, sec1Col1X + instLbl1Width, instRowY);
 
-    const lbl1Width = doc.getTextWidth(row.col1.label) + 2.5;
-    doc.setFont('helvetica', 'normal');
-    const split1 = doc.splitTextToSize(row.col1.val, row.col1.valWidth);
-    doc.text(split1, sec1Col1X + lbl1Width, sec1RowY);
+  // Col 2: RUT Instalador
+  doc.setFont('helvetica', 'bold');
+  doc.text('RUT Instalador:', sec1Col2X, instRowY);
 
-    // Col 2
-    doc.setFont('helvetica', 'bold');
-    doc.text(row.col2.label, sec1Col2X, sec1RowY);
+  const instLbl2Width = doc.getTextWidth('RUT Instalador:') + 2.5;
+  doc.setFont('helvetica', 'normal');
+  const splitInst2 = doc.splitTextToSize(installerRut, 55);
+  doc.text(splitInst2, sec1Col2X + instLbl2Width, instRowY);
 
-    const lbl2Width = doc.getTextWidth(row.col2.label) + 2.5;
-    doc.setFont('helvetica', 'normal');
-    const split2 = doc.splitTextToSize(row.col2.val, row.col2.valWidth);
-    doc.text(split2, sec1Col2X + lbl2Width, sec1RowY);
-
-    sec1RowY += rHeight;
-  });
-
-  y += sec1BoxHeight + 6;
+  y += sec1BoxHeight + 4;
 
   // -------------------------------------------------------------
-  // SECTION 2: FICHA TÉCNICA DEL SISTEMA SOLAR
+  // SECTION 2: DATOS DEL CLIENTE
   // -------------------------------------------------------------
   const sec2Col1X = margin + 4;
   const sec2Col2X = margin + 96;
+
+  const clientName = inspection.client.name || 'N/A';
+  const clientAddress = `${inspection.client.address || 'N/A'}${inspection.client.comuna ? `, ${inspection.client.comuna}` : ''}`;
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+
+  const clientNameLines = doc.splitTextToSize(clientName, 55).length;
+  const clientAddrLines = doc.splitTextToSize(clientAddress, 65).length;
+  const clientMaxLines = Math.max(1, clientNameLines, clientAddrLines);
+  const clientContentH = (clientMaxLines * 3.8) + 2;
+  const sec2HeaderHeight = 8;
+  const sec2BoxHeight = sec2HeaderHeight + clientContentH + 2;
+
+  checkAddPage(sec2BoxHeight + 4);
+
+  doc.setFillColor(bgLight[0], bgLight[1], bgLight[2]);
+  doc.setDrawColor(borderGray[0], borderGray[1], borderGray[2]);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(margin, y, contentWidth, sec2BoxHeight, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
+  doc.text('2. DATOS DEL CLIENTE', margin + 4, y + 5.5);
+
+  const clientRowY = y + sec2HeaderHeight + 2;
+
+  // Col 1: Nombre de Cliente
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+  doc.text('Nombre de Cliente:', sec2Col1X, clientRowY);
+
+  const clientLbl1Width = doc.getTextWidth('Nombre de Cliente:') + 2.5;
+  doc.setFont('helvetica', 'normal');
+  const splitClient1 = doc.splitTextToSize(clientName, 55);
+  doc.text(splitClient1, sec2Col1X + clientLbl1Width, clientRowY);
+
+  // Col 2: Dirección
+  doc.setFont('helvetica', 'bold');
+  doc.text('Dirección:', sec2Col2X, clientRowY);
+
+  const clientLbl2Width = doc.getTextWidth('Dirección:') + 2.5;
+  doc.setFont('helvetica', 'normal');
+  const splitClient2 = doc.splitTextToSize(clientAddress, 65);
+  doc.text(splitClient2, sec2Col2X + clientLbl2Width, clientRowY);
+
+  y += sec2BoxHeight + 5;
+
+  // -------------------------------------------------------------
+  // SECTION 3: FICHA TÉCNICA DEL SISTEMA SOLAR
+  // -------------------------------------------------------------
+  const sec3Col1X = margin + 4;
+  const sec3Col2X = margin + 96;
 
   // Potencia Instalada (kW) = Potencia nominal del inversor seleccionado
   let displayPower = 'N/A';
@@ -386,26 +419,26 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   });
 
   const totalSpecsContentHeight = rowHeights.reduce((sum, h) => sum + h, 0);
-  const sec2HeaderHeight = 9;
-  const sec2SpecsBoxHeight = sec2HeaderHeight + totalSpecsContentHeight + 3;
+  const sec3HeaderHeight = 9;
+  const sec3SpecsBoxHeight = sec3HeaderHeight + totalSpecsContentHeight + 3;
 
   const mapsCardHeight = 25;
-  const totalSec2CombinedHeight = sec2SpecsBoxHeight + mapsCardHeight + 8;
+  const totalSec3CombinedHeight = sec3SpecsBoxHeight + mapsCardHeight + 8;
 
-  checkAddPage(totalSec2CombinedHeight);
+  checkAddPage(totalSec3CombinedHeight);
 
   // Main Specs Box
   doc.setFillColor(bgLight[0], bgLight[1], bgLight[2]);
   doc.setDrawColor(borderGray[0], borderGray[1], borderGray[2]);
   doc.setLineWidth(0.3);
-  doc.roundedRect(margin, y, contentWidth, sec2SpecsBoxHeight, 2, 2, 'FD');
+  doc.roundedRect(margin, y, contentWidth, sec3SpecsBoxHeight, 2, 2, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-  doc.text('2. ESPECIFICACIONES TÉCNICAS DE LA INSTALACIÓN FOTOVOLTAICA', margin + 4, y + 6);
+  doc.text('3. ESPECIFICACIONES TÉCNICAS DE LA INSTALACIÓN FOTOVOLTAICA', margin + 4, y + 6);
 
-  let rowY = y + sec2HeaderHeight + 2;
+  let rowY = y + sec3HeaderHeight + 2;
 
   specRows.forEach((row, idx) => {
     const rHeight = rowHeights[idx];
@@ -414,26 +447,26 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-    doc.text(row.col1.label, sec2Col1X, rowY);
+    doc.text(row.col1.label, sec3Col1X, rowY);
 
     const lbl1Width = doc.getTextWidth(row.col1.label) + 2.5;
     doc.setFont('helvetica', 'normal');
     const split1 = doc.splitTextToSize(row.col1.val, row.col1.valWidth);
-    doc.text(split1, sec2Col1X + lbl1Width, rowY);
+    doc.text(split1, sec3Col1X + lbl1Width, rowY);
 
     // Col 2
     doc.setFont('helvetica', 'bold');
-    doc.text(row.col2.label, sec2Col2X, rowY);
+    doc.text(row.col2.label, sec3Col2X, rowY);
 
     const lbl2Width = doc.getTextWidth(row.col2.label) + 2.5;
     doc.setFont('helvetica', 'normal');
     const split2 = doc.splitTextToSize(row.col2.val, row.col2.valWidth);
-    doc.text(split2, sec2Col2X + lbl2Width, rowY);
+    doc.text(split2, sec3Col2X + lbl2Width, rowY);
 
     rowY += rHeight;
   });
 
-  y += sec2SpecsBoxHeight + 6;
+  y += sec3SpecsBoxHeight + 6;
 
   // -------------------------------------------------------------
   // GOOGLE MAPS LOCATION CARD
@@ -535,14 +568,14 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   y += mapsCardHeight + 8;
 
   // -------------------------------------------------------------
-  // SECTION 3: RESUMEN DE CHECKLIST NORMATIVO SEC
+  // SECTION 4: RESUMEN DE CHECKLIST NORMATIVO SEC
   // -------------------------------------------------------------
   checkAddPage(15);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-  doc.text('3. CHECKLIST DE INSPECCIÓN TÉCNICA TE4 SEC', margin, y);
+  doc.text('4. CHECKLIST DE INSPECCIÓN TÉCNICA TE4 SEC', margin, y);
 
   y += 4;
 
@@ -642,7 +675,7 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   y += 6;
 
   // -------------------------------------------------------------
-  // SECTION 4: OBSERVACIONES Y CONCLUSIÓN TÉCNICA
+  // SECTION 5: OBSERVACIONES Y CONCLUSIÓN TÉCNICA
   // -------------------------------------------------------------
   const generalObs = inspection.generalNotes || 'La instalación cumple con todos los parámetros técnicos y de seguridad exigidos por la normativa de la SEC para la tramitación de la Declaración TE4.';
   const splitObs = doc.splitTextToSize(generalObs, contentWidth - 8);
@@ -657,7 +690,7 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-  doc.text('4. OBSERVACIONES Y OBSERVACIÓN FINAL DEL INSTALADOR', margin + 4, y + 6);
+  doc.text('5. OBSERVACIONES Y OBSERVACIÓN FINAL DEL INSTALADOR', margin + 4, y + 6);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
@@ -667,251 +700,364 @@ export async function generateTE4PdfReport(inspection: Inspection): Promise<Blob
   y += obsBoxHeight + 8;
 
   // -------------------------------------------------------------
-  // SIGNATURE AREA
+  // ANEXO FOTOGRÁFICO - CADA ÍTEM EN SU PÁGINA CORRESPONDIENTE
+  // (No se mezclan fotos de ítems distintos en una misma página)
   // -------------------------------------------------------------
-  checkAddPage(38);
-
-  const sigCol1Center = margin + 45;
-  const sigCol2Center = margin + 137;
-
-  // Signature lines
-  doc.setDrawColor(borderGray[0], borderGray[1], borderGray[2]);
-  doc.setLineWidth(0.5);
-  doc.line(margin + 10, y + 20, margin + 80, y + 20);
-  doc.line(margin + 102, y + 20, margin + 172, y + 20);
-
-  // Installer Signature Image if present
-  if (inspection.signatureDataUrl) {
-    try {
-      doc.addImage(inspection.signatureDataUrl, 'PNG', margin + 20, y + 2, 50, 16);
-    } catch (err) {
-      console.warn('Could not render signature on PDF:', err);
-    }
-  }
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-
-  doc.text('Firma Instalador Certificado SEC', sigCol1Center, y + 25, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text(`${inspection.installer.name || 'Instalador Certificado'}`, sigCol1Center, y + 29, { align: 'center' });
-  doc.text(`Lic. SEC: ${inspection.installer.secLicenceNumber || 'N/A'}${inspection.installer.rut ? ` | RUT: ${inspection.installer.rut}` : ''}`, sigCol1Center, y + 33, { align: 'center' });
-
-  // Client Signature
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.text('Firma / Recepción Cliente', sigCol2Center, y + 25, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text(`${inspection.client.name || 'Propietario / Representante'}`, sigCol2Center, y + 29, { align: 'center' });
-  doc.text(`RUT: ${inspection.client.rut || 'N/A'}`, sigCol2Center, y + 33, { align: 'center' });
-
-  y += 40;
-
-  // -------------------------------------------------------------
-  // ANEXO FOTOGRÁFICO
-  // -------------------------------------------------------------
-  // Collect all photos from applicable categories
-  const rawPhotoList: {
+  interface ItemPhotoGroup {
     code: string;
     title: string;
     normaSec: string;
     status: string;
     observation?: string;
-    photo: PhotoItem;
-  }[] = [];
+    photos: {
+      photo: PhotoItem;
+      prepared: {
+        dataUrl?: string;
+        format: 'JPEG' | 'PNG';
+        width: number;
+        height: number;
+        aspectRatio?: number;
+        isVideo?: boolean;
+      } | null;
+    }[];
+  }
 
-  applicableCategories.forEach((cat) => {
-    cat.items.forEach((item) => {
-      item.photos.forEach((ph) => {
-        rawPhotoList.push({
+  const itemsWithPhotos: ItemPhotoGroup[] = [];
+
+  for (const cat of applicableCategories) {
+    for (const item of cat.items) {
+      if (item.photos && item.photos.length > 0) {
+        const preparedList = await Promise.all(
+          item.photos.map(async (ph) => {
+            const prepared = await prepareImageForPdf(ph.url, ph.id, ph.name);
+            return {
+              photo: ph,
+              prepared,
+            };
+          })
+        );
+
+        itemsWithPhotos.push({
           code: item.code,
           title: item.title,
           normaSec: item.normaSec,
           status: item.status,
           observation: item.observation,
-          photo: ph,
+          photos: preparedList,
         });
-      });
-    });
-  });
-
-  if (rawPhotoList.length > 0) {
-    // Pre-process and normalize all images concurrently
-    const preparedPhotos = await Promise.all(
-      rawPhotoList.map(async (item) => {
-        const prepared = await prepareImageForPdf(item.photo.url, item.photo.id, item.photo.name);
-        return {
-          ...item,
-          prepared,
-        };
-      })
-    );
-
-    doc.addPage();
-    y = margin;
-    drawHeaderFooter();
-
-    const drawPhotoPageHeader = (isContinuation: boolean) => {
-      doc.setFillColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-      doc.roundedRect(margin, y, contentWidth, 11, 2, 2, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10.5);
-      doc.text(
-        isContinuation
-          ? 'ANEXO FOTOGRÁFICO - EVIDENCIA DE INSPECCIÓN TE4 (Continuación)'
-          : 'ANEXO FOTOGRÁFICO - EVIDENCIA DE INSPECCIÓN TE4',
-        margin + 5,
-        y + 7.2
-      );
-      y += 15;
-    };
-
-    drawPhotoPageHeader(false);
-
-    const gapX = 8;
-    const cardWidth = (contentWidth - gapX) / 2; // 87 mm
-    const cardHeight = 74; // 74 mm per card
-    const gapY = 6;
-    const itemsPerRow = 2;
-    const maxPageY = pageHeight - margin - 15; // safe boundary before footer
-
-    for (let i = 0; i < preparedPhotos.length; i++) {
-      const item = preparedPhotos[i];
-      const col = i % itemsPerRow;
-      const posX = margin + col * (cardWidth + gapX);
-
-      // Check if new row fits on current page
-      if (col === 0 && y + cardHeight > maxPageY) {
-        doc.addPage();
-        y = margin;
-        drawHeaderFooter();
-        drawPhotoPageHeader(true);
       }
+    }
+  }
 
-      // Draw Main Card Outline Container
-      doc.setFillColor(252, 253, 255);
-      doc.setDrawColor(borderGray[0], borderGray[1], borderGray[2]);
-      doc.setLineWidth(0.3);
-      doc.roundedRect(posX, y, cardWidth, cardHeight, 2, 2, 'FD');
+  if (itemsWithPhotos.length > 0) {
+    for (const itemGroup of itemsWithPhotos) {
+      // Cada ítem inicia estrictamente en una nueva página
+      doc.addPage();
+      y = margin;
+      drawHeaderFooter();
 
-      // Card Header Banner
-      doc.setFillColor(235, 243, 238);
-      doc.roundedRect(posX + 1.5, y + 1.5, cardWidth - 3, 7.5, 1.5, 1.5, 'F');
+      const drawItemPhotoHeader = (isContinuation: boolean) => {
+        const headerH = 15;
+        doc.setFillColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
+        doc.roundedRect(margin, y, contentWidth, headerH, 2, 2, 'F');
 
-      // Item Code badge
-      doc.setFillColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-      doc.roundedRect(posX + 2.5, y + 2.5, 14, 5.5, 1, 1, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7);
-      doc.text(`Ítem ${item.code}`, posX + 9.5, y + 6.2, { align: 'center' });
-
-      // Title
-      doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.5);
-      const cleanItemTitle = item.title.length > 38 ? item.title.slice(0, 36) + '..' : item.title;
-      doc.text(cleanItemTitle, posX + 18, y + 6.3, { maxWidth: cardWidth - 22 });
-
-      // Photo Container Box Dimensions
-      const boxW = cardWidth - 6; // 81 mm
-      const boxH = 49; // 49 mm
-      const boxX = posX + 3;
-      const boxY = y + 10.5;
-
-      doc.setFillColor(241, 245, 249);
-      doc.setDrawColor(226, 232, 240);
-      doc.setLineWidth(0.2);
-      doc.roundedRect(boxX, boxY, boxW, boxH, 1, 1, 'FD');
-
-      if (item.prepared && item.prepared.isVideo) {
-        // Video file display box
-        doc.setFillColor(238, 242, 255);
-        doc.rect(boxX, boxY, boxW, boxH, 'F');
+        doc.setTextColor(255, 255, 255);
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
-        doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-        doc.text('🎥 [REGISTRO DE VIDEO ADJUNTO]', boxX + boxW / 2, boxY + 18, { align: 'center' });
+        doc.setFontSize(9.5);
+        const headerTitle = isContinuation
+          ? `ANEXO FOTOGRÁFICO - ÍTEM ${itemGroup.code} (Continuación)`
+          : `ANEXO FOTOGRÁFICO - ÍTEM ${itemGroup.code}`;
+        doc.text(headerTitle, margin + 4, y + 6);
+
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.5);
-        doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-        doc.text(`Archivo: ${(item.photo.name || 'Video').substring(0, 30)}`, boxX + boxW / 2, boxY + 26, { align: 'center' });
-        doc.text(`Fecha/Hora: ${item.photo.timestamp || 'Registrado'}`, boxX + boxW / 2, boxY + 33, { align: 'center' });
-      } else if (item.prepared && item.prepared.dataUrl) {
-        try {
-          const imgAspect = item.prepared.aspectRatio || (item.prepared.width / item.prepared.height) || 1.33;
-          const boxAspect = boxW / boxH;
+        doc.setTextColor(215, 228, 245);
+        const subTitle = `${itemGroup.title}${itemGroup.normaSec ? ` • Norma SEC: ${itemGroup.normaSec}` : ''}`;
+        const subLines = doc.splitTextToSize(subTitle, contentWidth - 36);
+        doc.text(subLines[0] || subTitle, margin + 4, y + 11);
 
-          let drawW = boxW;
-          let drawH = boxH;
+        // Status Badge
+        const badgeW = 24;
+        const badgeH = 5;
+        const badgeX = margin + contentWidth - badgeW - 3;
+        const badgeY = y + 2.5;
 
-          if (imgAspect > boxAspect) {
-            // Wider image: match width, calculate height
-            drawW = boxW;
-            drawH = boxW / imgAspect;
-          } else {
-            // Taller image: match height, calculate width
-            drawH = boxH;
-            drawW = boxH * imgAspect;
-          }
+        if (itemGroup.status === 'C') {
+          doc.setFillColor(greenPass[0], greenPass[1], greenPass[2]);
+          doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 1, 1, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7);
+          doc.text('CONFORME', badgeX + badgeW / 2, badgeY + 3.7, { align: 'center' });
+        } else if (itemGroup.status === 'NC') {
+          doc.setFillColor(redFail[0], redFail[1], redFail[2]);
+          doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 1, 1, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7);
+          doc.text('NO CONF.', badgeX + badgeW / 2, badgeY + 3.7, { align: 'center' });
+        } else if (itemGroup.status === 'NA') {
+          doc.setFillColor(130, 130, 130);
+          doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 1, 1, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7);
+          doc.text('N/A', badgeX + badgeW / 2, badgeY + 3.7, { align: 'center' });
+        }
 
-          // Center the image inside the box
-          const imgX = boxX + (boxW - drawW) / 2;
-          const imgY = boxY + (boxH - drawH) / 2;
+        y += headerH + 3;
 
-          doc.addImage(item.prepared.dataUrl, item.prepared.format, imgX, imgY, drawW, drawH);
-
-          // Subtle border around photo
-          doc.setDrawColor(203, 213, 225);
-          doc.setLineWidth(0.2);
-          doc.rect(imgX, imgY, drawW, drawH, 'D');
-        } catch (e) {
-          console.warn('Error placing image in PDF:', e);
-          doc.setFillColor(241, 245, 249);
-          doc.rect(boxX, boxY, boxW, boxH, 'F');
+        // Observation banner if not continuation and has observation
+        if (!isContinuation && itemGroup.observation) {
           doc.setFontSize(7.5);
-          doc.setTextColor(120, 120, 120);
-          doc.text('Foto adjunta registrada', boxX + boxW / 2, boxY + 25, { align: 'center' });
+          const obsText = `Observación técnica: ${itemGroup.observation}`;
+          const obsLines = doc.splitTextToSize(obsText, contentWidth - 8);
+          const obsH = Math.max(6.5, obsLines.length * 3.3 + 3);
+          doc.setFillColor(254, 243, 199);
+          doc.setDrawColor(245, 158, 11);
+          doc.setLineWidth(0.2);
+          doc.roundedRect(margin, y, contentWidth, obsH, 1, 1, 'FD');
+          doc.setTextColor(146, 64, 14);
+          doc.setFont('helvetica', 'bold');
+          doc.text(obsLines, margin + 4, y + 4.2);
+          y += obsH + 3;
+        }
+      };
+
+      drawItemPhotoHeader(false);
+
+      const maxPageY = pageHeight - margin - 12;
+      const numPhotos = itemGroup.photos.length;
+
+      if (numPhotos === 1) {
+        // Single photo layout: Centered and prominent
+        const cardW = 144;
+        const cardH = 112;
+        const posX = margin + (contentWidth - cardW) / 2;
+        const photoItem = itemGroup.photos[0];
+
+        // Container card
+        doc.setFillColor(252, 253, 255);
+        doc.setDrawColor(borderGray[0], borderGray[1], borderGray[2]);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(posX, y, cardW, cardH, 2, 2, 'FD');
+
+        // Header banner inside card
+        doc.setFillColor(235, 243, 238);
+        doc.roundedRect(posX + 1.5, y + 1.5, cardW - 3, 7, 1.5, 1.5, 'F');
+        doc.setFillColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
+        doc.roundedRect(posX + 2.5, y + 2.5, 28, 5, 1, 1, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.text('Fotografía 1 de 1', posX + 16.5, y + 6, { align: 'center' });
+
+        doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        const cleanSingleTitle = itemGroup.title.length > 50 ? itemGroup.title.slice(0, 48) + '..' : itemGroup.title;
+        doc.text(cleanSingleTitle, posX + 33, y + 6, { maxWidth: cardW - 36 });
+
+        // Box image
+        const boxW = cardW - 6;
+        const boxH = 82;
+        const boxX = posX + 3;
+        const boxY = y + 10.5;
+
+        doc.setFillColor(241, 245, 249);
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.2);
+        doc.roundedRect(boxX, boxY, boxW, boxH, 1, 1, 'FD');
+
+        if (photoItem.prepared && photoItem.prepared.isVideo) {
+          doc.setFillColor(238, 242, 255);
+          doc.rect(boxX, boxY, boxW, boxH, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
+          doc.text('🎥 [REGISTRO DE VIDEO ADJUNTO]', boxX + boxW / 2, boxY + 30, { align: 'center' });
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+          doc.text(`Archivo: ${(photoItem.photo.name || 'Video').substring(0, 40)}`, boxX + boxW / 2, boxY + 42, { align: 'center' });
+          doc.text(`Fecha/Hora: ${photoItem.photo.timestamp || 'Registrado'}`, boxX + boxW / 2, boxY + 52, { align: 'center' });
+        } else if (photoItem.prepared && photoItem.prepared.dataUrl) {
+          try {
+            const imgAspect = photoItem.prepared.aspectRatio || (photoItem.prepared.width / photoItem.prepared.height) || 1.33;
+            const boxAspect = boxW / boxH;
+            let drawW = boxW;
+            let drawH = boxH;
+            if (imgAspect > boxAspect) {
+              drawW = boxW;
+              drawH = boxW / imgAspect;
+            } else {
+              drawH = boxH;
+              drawW = boxH * imgAspect;
+            }
+            const imgX = boxX + (boxW - drawW) / 2;
+            const imgY = boxY + (boxH - drawH) / 2;
+            doc.addImage(photoItem.prepared.dataUrl, photoItem.prepared.format, imgX, imgY, drawW, drawH);
+            doc.setDrawColor(203, 213, 225);
+            doc.setLineWidth(0.2);
+            doc.rect(imgX, imgY, drawW, drawH, 'D');
+          } catch (e) {
+            console.warn('Error rendering image in PDF:', e);
+          }
+        }
+
+        // Footer of single photo
+        const footY = y + 96;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(100, 116, 139);
+        const timestampStr = photoItem.photo.timestamp ? `📅 ${photoItem.photo.timestamp}` : '📅 Fecha en terreno';
+        doc.text(timestampStr, posX + 4, footY + 4);
+
+        const specificNote = photoItem.photo.note || itemGroup.observation || '';
+        if (specificNote) {
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(30, 41, 59);
+          doc.text(`📝 ${specificNote}`, posX + 4, footY + 9, { maxWidth: cardW - 8 });
+        } else {
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(100, 116, 139);
+          doc.text(`Norma: ${itemGroup.normaSec} • Evidencia Fotográfica`, posX + 4, footY + 9, { maxWidth: cardW - 8 });
         }
       } else {
-        // Fallback for unavailable image
-        doc.setFillColor(241, 245, 249);
-        doc.rect(boxX, boxY, boxW, boxH, 'F');
-        doc.setFontSize(7.5);
-        doc.setTextColor(120, 120, 120);
-        doc.text('Foto adjunta registrada', boxX + boxW / 2, boxY + 25, { align: 'center' });
+        // Multi-photo layout: 2 columns grid
+        const gapX = 8;
+        const cardW = (contentWidth - gapX) / 2; // 87 mm
+        const cardH = 78; // 78 mm
+        const gapY = 6;
+        const itemsPerRow = 2;
+
+        let photoIdxInPage = 0;
+
+        for (let p = 0; p < numPhotos; p++) {
+          const photoItem = itemGroup.photos[p];
+          const col = photoIdxInPage % itemsPerRow;
+          const posX = margin + col * (cardW + gapX);
+
+          // Check if new row fits on current page (only continuations of THIS SAME item)
+          if (col === 0 && y + cardH > maxPageY) {
+            doc.addPage();
+            y = margin;
+            drawHeaderFooter();
+            drawItemPhotoHeader(true);
+            photoIdxInPage = 0;
+          }
+
+          // Container card
+          doc.setFillColor(252, 253, 255);
+          doc.setDrawColor(borderGray[0], borderGray[1], borderGray[2]);
+          doc.setLineWidth(0.3);
+          doc.roundedRect(posX, y, cardW, cardH, 2, 2, 'FD');
+
+          // Header banner inside card
+          doc.setFillColor(235, 243, 238);
+          doc.roundedRect(posX + 1.5, y + 1.5, cardW - 3, 7.5, 1.5, 1.5, 'F');
+
+          // Badge with photo number
+          doc.setFillColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
+          doc.roundedRect(posX + 2.5, y + 2.5, 22, 5.5, 1, 1, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7);
+          doc.text(`Foto ${p + 1} de ${numPhotos}`, posX + 13.5, y + 6.2, { align: 'center' });
+
+          doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7.5);
+          const cleanTitle = itemGroup.title.length > 30 ? itemGroup.title.slice(0, 28) + '..' : itemGroup.title;
+          doc.text(cleanTitle, posX + 27, y + 6.3, { maxWidth: cardW - 30 });
+
+          // Box image
+          const boxW = cardW - 6; // 81 mm
+          const boxH = 51; // 51 mm
+          const boxX = posX + 3;
+          const boxY = y + 10.5;
+
+          doc.setFillColor(241, 245, 249);
+          doc.setDrawColor(226, 232, 240);
+          doc.setLineWidth(0.2);
+          doc.roundedRect(boxX, boxY, boxW, boxH, 1, 1, 'FD');
+
+          if (photoItem.prepared && photoItem.prepared.isVideo) {
+            doc.setFillColor(238, 242, 255);
+            doc.rect(boxX, boxY, boxW, boxH, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8.5);
+            doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
+            doc.text('🎥 [REGISTRO DE VIDEO ADJUNTO]', boxX + boxW / 2, boxY + 18, { align: 'center' });
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.5);
+            doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+            doc.text(`Archivo: ${(photoItem.photo.name || 'Video').substring(0, 30)}`, boxX + boxW / 2, boxY + 27, { align: 'center' });
+            doc.text(`Fecha/Hora: ${photoItem.photo.timestamp || 'Registrado'}`, boxX + boxW / 2, boxY + 35, { align: 'center' });
+          } else if (photoItem.prepared && photoItem.prepared.dataUrl) {
+            try {
+              const imgAspect = photoItem.prepared.aspectRatio || (photoItem.prepared.width / photoItem.prepared.height) || 1.33;
+              const boxAspect = boxW / boxH;
+              let drawW = boxW;
+              let drawH = boxH;
+              if (imgAspect > boxAspect) {
+                drawW = boxW;
+                drawH = boxW / imgAspect;
+              } else {
+                drawH = boxH;
+                drawW = boxH * imgAspect;
+              }
+              const imgX = boxX + (boxW - drawW) / 2;
+              const imgY = boxY + (boxH - drawH) / 2;
+              doc.addImage(photoItem.prepared.dataUrl, photoItem.prepared.format, imgX, imgY, drawW, drawH);
+              doc.setDrawColor(203, 213, 225);
+              doc.setLineWidth(0.2);
+              doc.rect(imgX, imgY, drawW, drawH, 'D');
+            } catch (e) {
+              console.warn('Error placing image in PDF:', e);
+              doc.setFillColor(241, 245, 249);
+              doc.rect(boxX, boxY, boxW, boxH, 'F');
+              doc.setFontSize(7.5);
+              doc.setTextColor(120, 120, 120);
+              doc.text('Foto adjunta registrada', boxX + boxW / 2, boxY + 25, { align: 'center' });
+            }
+          } else {
+            doc.setFillColor(241, 245, 249);
+            doc.rect(boxX, boxY, boxW, boxH, 'F');
+            doc.setFontSize(7.5);
+            doc.setTextColor(120, 120, 120);
+            doc.text('Foto adjunta registrada', boxX + boxW / 2, boxY + 25, { align: 'center' });
+          }
+
+          // Card footer
+          const footerY = y + 63.5;
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(6.8);
+          doc.setTextColor(100, 116, 139);
+
+          const timestampStr = photoItem.photo.timestamp ? `📅 ${photoItem.photo.timestamp}` : '📅 Fecha en terreno';
+          doc.text(timestampStr, posX + 3, footerY + 2.5);
+
+          const specificNote = photoItem.photo.note || itemGroup.observation || '';
+          if (specificNote) {
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(30, 41, 59);
+            const cleanNote = specificNote.length > 38 ? specificNote.slice(0, 36) + '..' : specificNote;
+            doc.text(`📝 ${cleanNote}`, posX + 3, footerY + 7, { maxWidth: cardW - 6 });
+          } else {
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(100, 116, 139);
+            doc.text(`Norma: ${itemGroup.normaSec} • Inspección Fotográfica`, posX + 3, footerY + 7, { maxWidth: cardW - 6 });
+          }
+
+          photoIdxInPage++;
+
+          if (col === itemsPerRow - 1 || p === numPhotos - 1) {
+            y += cardH + gapY;
+          }
+        }
       }
-
-      // Card Footer: Metadata (Timestamp, Note / Observation)
-      const footerY = y + 61;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6.8);
-      doc.setTextColor(100, 116, 139);
-
-      const timestampStr = item.photo.timestamp ? `📅 ${item.photo.timestamp}` : '📅 Fecha en terreno';
-      doc.text(timestampStr, posX + 3, footerY + 2.5);
-
-      // Note or observation
-      const specificNote = item.photo.note || item.observation || '';
-      if (specificNote) {
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(30, 41, 59);
-        const cleanNote = specificNote.length > 40 ? specificNote.slice(0, 38) + '..' : specificNote;
-        doc.text(`📝 ${cleanNote}`, posX + 3, footerY + 6.5, { maxWidth: cardWidth - 6 });
-      } else {
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100, 116, 139);
-        doc.text(`Norma: ${item.normaSec} • Inspección Fotográfica`, posX + 3, footerY + 6.5, { maxWidth: cardWidth - 6 });
-      }
-
-      // Advance y when row completes or at the last photo
-      if (col === itemsPerRow - 1 || i === preparedPhotos.length - 1) {
-        y += cardHeight + gapY;
-      }
+      // Al terminar este ítem, el siguiente ítem iniciará obligatoriamente en una nueva página (doc.addPage)
     }
   }
 
