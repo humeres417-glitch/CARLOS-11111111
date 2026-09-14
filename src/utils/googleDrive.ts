@@ -1,6 +1,7 @@
 import { Inspection, UploadProgress } from '../types';
 import { getAccessToken, googleSignIn } from './firebaseAuth';
 import JSZip from 'jszip';
+import { generateMemoriaExplicativaPdf } from './memoriaExplicativaGenerator';
 
 /**
  * Google Drive API helper configured for upload to te4.servilec@gmail.com
@@ -261,13 +262,14 @@ export async function findOrCreateFolder(
 }
 
 /**
- * Uploads complete Inspection (PDF report + all item photos) to Google Drive
+ * Uploads complete Inspection (PDF report + Memoria Explicativa SEC + all item photos) to Google Drive
  */
 export async function uploadFullInspectionToDrive(
   inspection: Inspection,
   pdfBlob: Blob,
   accessToken?: string,
-  onProgress?: (progress: UploadProgress) => void
+  onProgress?: (progress: UploadProgress) => void,
+  memoriaBlobParam?: Blob
 ): Promise<{ folderId: string; folderUrl: string }> {
   let activeToken = accessToken || getStoredAccessToken();
 
@@ -291,7 +293,8 @@ export async function uploadFullInspectionToDrive(
     });
   });
 
-  const totalFiles = 1 + allPhotos.length;
+  // 2 PDF documents (Reporte TE4 + Memoria Explicativa SEC) + photos
+  const totalFiles = 2 + allPhotos.length;
   let completedFiles = 0;
 
   if (onProgress) {
@@ -323,12 +326,12 @@ export async function uploadFullInspectionToDrive(
 
   const projectFolder = await createDriveFolder(projectFolderName, rootFolder.id, activeToken);
 
-  // 3. Upload PDF Report formatted as: "nombre cliente_direccion_fecha.pdf"
+  // 3. Upload PDF Report: "nombre cliente_direccion_fecha.pdf"
   const pdfFileName = `${formattedName}.pdf`;
 
   if (onProgress) {
     onProgress({
-      currentStep: 'Subiendo Reporte Técnico SEC en PDF...',
+      currentStep: 'Subiendo Reporte Técnico SEC en PDF (1/2)...',
       totalFiles,
       completedFiles: 1,
       currentFileName: pdfFileName,
@@ -339,7 +342,28 @@ export async function uploadFullInspectionToDrive(
   await uploadFileToDrive(pdfBlob, pdfFileName, 'application/pdf', projectFolder.id, activeToken);
   completedFiles = 1;
 
-  // 4. Create Subfolder "Fotos_Inspeccion_TE4" for photos if any photos exist
+  // 4. Generate & Upload Memoria Explicativa SEC
+  const memoriaFileName = `${formattedName}_Memoria_Explicativa_SEC.pdf`;
+
+  if (onProgress) {
+    onProgress({
+      currentStep: 'Generando y subiendo Memoria Explicativa SEC (2/2)...',
+      totalFiles,
+      completedFiles: 2,
+      currentFileName: memoriaFileName,
+      isComplete: false,
+    });
+  }
+
+  try {
+    const memBlob = memoriaBlobParam || (await generateMemoriaExplicativaPdf(inspection));
+    await uploadFileToDrive(memBlob, memoriaFileName, 'application/pdf', projectFolder.id, activeToken);
+    completedFiles = 2;
+  } catch (memErr) {
+    console.warn('Error generando/subiendo Memoria Explicativa a Drive:', memErr);
+  }
+
+  // 5. Create Subfolder "Fotos_Inspeccion_TE4" for photos if any photos exist
   if (allPhotos.length > 0) {
     if (onProgress) {
       onProgress({
@@ -379,7 +403,7 @@ export async function uploadFullInspectionToDrive(
       currentStep: `¡Carga exitosa a Google Drive (${TARGET_DRIVE_ACCOUNT})!`,
       totalFiles,
       completedFiles: totalFiles,
-      currentFileName: 'Archivos respaldados correctamente en Drive',
+      currentFileName: 'Informe TE4 y Memoria Explicativa respaldados correctamente en Drive',
       isComplete: true,
       driveFolderUrl: finalUrl,
     });
@@ -394,18 +418,29 @@ export async function uploadFullInspectionToDrive(
 /**
  * Downloads full inspection pack (.ZIP) containing:
  * - PDF Report with standardized name: "[Cliente]_[Direccion]_[Fecha].pdf"
+ * - Memoria Explicativa SEC: "[Cliente]_[Direccion]_[Fecha]_Memoria_Explicativa_SEC.pdf"
  * - Subfolder "Fotos_Inspeccion_TE4" with all item photos properly tagged
  */
 export async function downloadInspectionZip(
   inspection: Inspection,
   pdfBlob: Blob,
-  onProgress?: (step: string) => void
+  onProgress?: (step: string) => void,
+  memoriaBlobParam?: Blob
 ): Promise<void> {
   const zip = new JSZip();
   const { formattedName } = buildInspectionBaseFileName(inspection);
 
-  if (onProgress) onProgress('Preparando informe PDF...');
+  if (onProgress) onProgress('Preparando Informe de Inspección TE4...');
   zip.file(`${formattedName}.pdf`, pdfBlob);
+  zip.file(`${formattedName}_Informe_TE4.pdf`, pdfBlob);
+
+  if (onProgress) onProgress('Generando Memoria Explicativa Técnica SEC...');
+  try {
+    const memBlob = memoriaBlobParam || (await generateMemoriaExplicativaPdf(inspection));
+    zip.file(`${formattedName}_Memoria_Explicativa_SEC.pdf`, memBlob);
+  } catch (memErr) {
+    console.warn('Error agregando Memoria Explicativa al ZIP:', memErr);
+  }
 
   const photosFolder = zip.folder('Fotos_Inspeccion_TE4');
   const allPhotos: { itemCode: string; itemTitle: string; photo: any }[] = [];

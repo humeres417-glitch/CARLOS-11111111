@@ -30,6 +30,7 @@ import {
   buildInspectionBaseFileName,
 } from '../utils/googleDrive';
 import { generateTE4PdfReport } from '../utils/pdfGenerator';
+import { generateMemoriaExplicativaPdf } from '../utils/memoriaExplicativaGenerator';
 import {
   googleSignIn,
   initAuth,
@@ -152,23 +153,40 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
 
       // 1. Generate PDF Report Blob
       setProgress({
-        currentStep: 'Generando Reporte Técnico SEC en PDF...',
-        totalFiles: totalPhotosCount + 1,
+        currentStep: 'Generando Reporte Técnico SEC en PDF (1/2)...',
+        totalFiles: totalPhotosCount + 2,
         completedFiles: 0,
-        currentFileName: `${formattedName}.pdf`,
+        currentFileName: `${formattedName}_Informe_TE4.pdf`,
         isComplete: false,
       });
 
       const pdfBlob = await generateTE4PdfReport(inspection);
 
-      // 2. Upload Report and Photos directly to Google Drive
+      // 2. Generate Memoria Explicativa SEC (11 Páginas)
+      setProgress({
+        currentStep: 'Generando Memoria Explicativa SEC (2/2)...',
+        totalFiles: totalPhotosCount + 2,
+        completedFiles: 1,
+        currentFileName: `${formattedName}_Memoria_Explicativa_SEC.pdf`,
+        isComplete: false,
+      });
+
+      let memoriaBlob: Blob | undefined;
+      try {
+        memoriaBlob = await generateMemoriaExplicativaPdf(inspection);
+      } catch (mErr) {
+        console.warn('Error al generar Memoria Explicativa para Drive:', mErr);
+      }
+
+      // 3. Upload Report, Memoria and Photos directly to Google Drive
       const { folderId, folderUrl } = await uploadFullInspectionToDrive(
         inspection,
         pdfBlob,
         activeTok,
         (currentProgress) => {
           setProgress(currentProgress);
-        }
+        },
+        memoriaBlob
       );
 
       setUploadSuccessUrl(folderUrl);
@@ -185,12 +203,25 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
 
   const handleDownloadZipPackage = async () => {
     setIsDownloadingZip(true);
-    setZipStepMessage('Generando reporte PDF...');
+    setZipStepMessage('Generando Informe de Inspección TE4...');
     try {
       const pdfBlob = await generateTE4PdfReport(inspection);
-      await downloadInspectionZip(inspection, pdfBlob, (step) => {
-        setZipStepMessage(step);
-      });
+      setZipStepMessage('Generando Memoria Explicativa SEC...');
+      let memoriaBlob: Blob | undefined;
+      try {
+        memoriaBlob = await generateMemoriaExplicativaPdf(inspection);
+      } catch (mErr) {
+        console.warn('Error al generar Memoria Explicativa para ZIP:', mErr);
+      }
+
+      await downloadInspectionZip(
+        inspection,
+        pdfBlob,
+        (step) => {
+          setZipStepMessage(step);
+        },
+        memoriaBlob
+      );
       setZipStepMessage(null);
     } catch (err: any) {
       console.error('Error generando paquete ZIP:', err);
@@ -202,13 +233,16 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
   };
 
   const handleSendByEmail = () => {
-    const subject = encodeURIComponent(`[INSPECCIÓN TE4 SEC] ${clientName} - ${address} (${date})`);
+    const subject = encodeURIComponent(`[EXPEDIENTE SEC TE4] ${clientName} - ${address} (${date})`);
     const body = encodeURIComponent(
-      `Estimado equipo Servilec,\n\nSe ha completado la inspección técnica fotovoltaica SEC para el proyecto:\n\n` +
+      `Estimado equipo Servilec,\n\nSe ha completado el expediente y la inspección técnica fotovoltaica SEC para el proyecto:\n\n` +
       `• Cliente: ${clientName}\n` +
       `• Dirección / Comuna: ${address}\n` +
       `• Fecha de Inspección: ${date}\n` +
-      `• Potencia: ${inspection.technical?.installedPower || 'N/A'} kWp\n` +
+      `• Potencia Declarada: ${inspection.technical?.installedPower || 'N/A'} kWp\n` +
+      `• Documentos generados:\n` +
+      `   1. Informe de Inspección Fotográfico TE4 SEC\n` +
+      `   2. Memoria Explicativa Oficial SEC (11 Páginas con cálculos y normativa)\n` +
       `• Total de Fotos de Evidencia: ${totalPhotosCount}\n` +
       `• Carpeta en Drive: INSTALACIONES SERVILEC / ${formattedName}\n\n` +
       `Saludos cordiales,\nInspector Técnico Servilec`
@@ -301,14 +335,18 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
               <Folder className="w-4 h-4 text-[#15803D]" />
               Estructura de Carpeta en Google Drive:
             </h4>
-            <div className="grid grid-cols-2 gap-2 text-[#1A1A1A] font-sans">
-              <div className="flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-[#15803D]" />
-                <span>1 Reporte PDF Técnico SEC</span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[#1A1A1A] font-sans text-xs">
+              <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-xs border border-slate-200">
+                <FileText className="w-3.5 h-3.5 text-[#15803D] shrink-0" />
+                <span>Informe TE4 PDF</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <ImageIcon className="w-3.5 h-3.5 text-[#15803D]" />
-                <span>{totalPhotosCount} Fotos de Evidencia</span>
+              <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-xs border border-slate-200">
+                <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>Memoria SEC (11 págs)</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-xs border border-slate-200">
+                <ImageIcon className="w-3.5 h-3.5 text-[#15803D] shrink-0" />
+                <span>{totalPhotosCount} Fotos Evidencia</span>
               </div>
             </div>
             <div className="text-[11px] font-mono pt-2 border-t border-[#1A1A1A]/20 bg-white p-2 rounded-xs border">
@@ -390,7 +428,7 @@ export const DriveSyncModal: React.FC<DriveSyncModalProps> = ({
                 <span>Descargar Paquete ZIP</span>
               </div>
               <p className="text-[10px] text-slate-500">
-                {isDownloadingZip ? zipStepMessage || 'Preparando ZIP...' : `PDF + ${totalPhotosCount} fotos organizadas`}
+                {isDownloadingZip ? zipStepMessage || 'Preparando ZIP...' : `2 PDFs (Informe + Memoria SEC) + ${totalPhotosCount} fotos`}
               </p>
             </button>
           </div>
